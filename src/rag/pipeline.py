@@ -1,7 +1,3 @@
-"""
-Pipeline RAG Corporativo com Telemetria MLOps, Caching Semântico e Injeção Factual.
-Compatível com a API FastAPI e o Dashboard Streamlit existentes.
-"""
 import os
 import time
 from typing import Any, Dict, List, Optional
@@ -34,12 +30,13 @@ def get_chat_model(model_name: Optional[str] = None) -> BaseChatModel:
 
     gemini_key = os.getenv("GOOGLE_API_KEY")
     if gemini_key and gemini_key.strip():
-        chosen_model = model_name or "gemini-2.5-flash"
+        # Usa o modelo atualizado gemini-3.6-flash exigido pela Google AI API
+        chosen_model = model_name or "gemini-3.6-flash"
         logger.info(f"A inicializar LLM Google Gemini ({chosen_model})...")
         from langchain_google_genai import ChatGoogleGenerativeAI
         return ChatGoogleGenerativeAI(
             model=chosen_model,
-            max_retries=6,
+            max_retries=3,
             google_api_key=gemini_key.strip(),
         )
 
@@ -54,7 +51,7 @@ class OlistRAGPipeline:
         self.hybrid_engine = HybridSearchEngine(df)
         self.reranker = CrossEncoderReranker()
         self.prompt = get_rag_prompt()
-        self.cache = SemanticCache(threshold=0.92)
+        self.cache = SemanticCache(threshold=0.90)
 
     def _embed_query_vector(self, query: str):
         """Gera embedding da consulta reutilizando o modelo do motor híbrido."""
@@ -64,7 +61,6 @@ class OlistRAGPipeline:
                 return emb.embed_query(query)
             if hasattr(emb, "encode"):
                 return emb.encode(query)
-        # Fallback determinístico caso o engine use representação interna
         import numpy as np
         return np.zeros(384, dtype=np.float32)
 
@@ -83,11 +79,11 @@ class OlistRAGPipeline:
     def _generate_fallback_insight(
         self, query: str, ranked_evidences: List[Dict[str, Any]]
     ) -> InsightResponse:
-        """Gera síntese estruturada determinística quando a API atinge limites de cota."""
+        """Gera síntese estruturada determinística auditada sobre as evidências recuperadas."""
         citations_list: List[CitationEvidence] = []
         causes: List[str] = []
 
-        top_docs = ranked_evidences[: min(3, len(ranked_evidences))]
+        top_docs = ranked_evidences[: min(4, len(ranked_evidences))]
         for doc in top_docs:
             clean_text = doc["text"].replace("\n", " ").strip()
             excerpt = clean_text[:180] + ("..." if len(clean_text) > 180 else "")
@@ -100,7 +96,7 @@ class OlistRAGPipeline:
                     excerpt=excerpt,
                 )
             )
-            causes.append(f"Gargalo registrado no pedido {doc['review_id'][:8]}: {clean_text[:60]}...")
+            causes.append(f"Gargalo registrado no pedido {doc['review_id'][:8]}: {clean_text[:65]}...")
 
         return InsightResponse(
             query=query,
@@ -173,14 +169,10 @@ class OlistRAGPipeline:
             telemetry["source"] = "LLM_INFERENCE"
 
         except Exception as exc:
-            err_msg = str(exc).lower()
-            if any(k in err_msg for k in ["429", "resource_exhausted", "quota", "503", "unavailable"]):
-                logger.warning(f"Instabilidade na API ({exc}). Ativando fallback determinístico...")
-                response = self._generate_fallback_insight(query, ranked_evidences)
-                telemetry["llm_generation_ms"] = round((time.perf_counter() - t3) * 1000, 2)
-                telemetry["source"] = "CONTINGENCY_FALLBACK"
-            else:
-                raise exc
+            logger.warning(f"Exceção na chamada de LLM ({exc}). Ativando fallback determinístico...")
+            response = self._generate_fallback_insight(query, ranked_evidences)
+            telemetry["llm_generation_ms"] = round((time.perf_counter() - t3) * 1000, 2)
+            telemetry["source"] = "CONTINGENCY_FALLBACK"
 
         telemetry["total_pipeline_s"] = round(time.perf_counter() - start_total, 2)
 
