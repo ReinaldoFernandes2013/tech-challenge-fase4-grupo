@@ -77,6 +77,10 @@ Em cumprimento aos critérios de avaliação académica e científica, o sistema
 ## 4. Estrutura do Repositório
 
 tech-challenge-fase4-grupo/
+
+
+```text
+tech-challenge-fase4-grupo/
 ├── data/
 │   ├── benchmarks/          # Relatórios consolidados da Tríade de RAG
 │   ├── models/              # Cache local de embeddings e reranker
@@ -96,6 +100,8 @@ tech-challenge-fase4-grupo/
 ├── Dockerfile               # Configuração multi-stage da aplicação
 ├── pyproject.toml           # Gestão moderna de projeto Python
 └── requirements.txt         # Dependências do projeto
+```
+
 
 
 ## 5. Instruções de Execução
