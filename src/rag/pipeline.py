@@ -1,14 +1,20 @@
+"""
+Pipeline RAG Corporativo com Telemetria MLOps, Caching Semântico e Injeção Factual.
+Compatível com a API FastAPI e o Dashboard Streamlit existentes.
+"""
 import os
 import time
 from typing import Any, Dict, List, Optional
 from dotenv import load_dotenv
 import pandas as pd
 from langchain_core.language_models.chat_models import BaseChatModel
+
 from src.core.config import settings
 from src.core.logging import logger
 from src.indexing.hybrid_indexer import HybridSearchEngine
 from src.rag.prompts import get_rag_prompt
 from src.rag.reranker import CrossEncoderReranker
+from src.rag.router import SemanticCache, QueryAnalyzer
 from src.schemas.rag_schema import CitationEvidence, InsightResponse
 
 load_dotenv(override=True)
@@ -28,7 +34,7 @@ def get_chat_model(model_name: Optional[str] = None) -> BaseChatModel:
 
     gemini_key = os.getenv("GOOGLE_API_KEY")
     if gemini_key and gemini_key.strip():
-        chosen_model = model_name or "gemini-3.6-flash"
+        chosen_model = model_name or "gemini-2.5-flash"
         logger.info(f"A inicializar LLM Google Gemini ({chosen_model})...")
         from langchain_google_genai import ChatGoogleGenerativeAI
         return ChatGoogleGenerativeAI(
@@ -41,12 +47,26 @@ def get_chat_model(model_name: Optional[str] = None) -> BaseChatModel:
 
 
 class OlistRAGPipeline:
-    """Pipeline de Voice of Customer Intelligence."""
+    """Pipeline de Voice of Customer Intelligence com Observabilidade e Cache."""
 
     def __init__(self, df: pd.DataFrame):
+        self.df = df
         self.hybrid_engine = HybridSearchEngine(df)
         self.reranker = CrossEncoderReranker()
         self.prompt = get_rag_prompt()
+        self.cache = SemanticCache(threshold=0.92)
+
+    def _embed_query_vector(self, query: str):
+        """Gera embedding da consulta reutilizando o modelo do motor híbrido."""
+        if hasattr(self.hybrid_engine, "embeddings"):
+            emb = self.hybrid_engine.embeddings
+            if hasattr(emb, "embed_query"):
+                return emb.embed_query(query)
+            if hasattr(emb, "encode"):
+                return emb.encode(query)
+        # Fallback determinístico caso o engine use representação interna
+        import numpy as np
+        return np.zeros(384, dtype=np.float32)
 
     def _format_context(self, evidences: List[Dict[str, Any]]) -> str:
         formatted = []
@@ -63,16 +83,15 @@ class OlistRAGPipeline:
     def _generate_fallback_insight(
         self, query: str, ranked_evidences: List[Dict[str, Any]]
     ) -> InsightResponse:
-        """Gera síntese estruturada determinística baseada nas evidências quando a API atinge limites de cota."""
+        """Gera síntese estruturada determinística quando a API atinge limites de cota."""
         citations_list: List[CitationEvidence] = []
         causes: List[str] = []
 
-        # Extrai os top documentos para compor as evidências formais
         top_docs = ranked_evidences[: min(3, len(ranked_evidences))]
         for doc in top_docs:
             clean_text = doc["text"].replace("\n", " ").strip()
             excerpt = clean_text[:180] + ("..." if len(clean_text) > 180 else "")
-            
+
             citations_list.append(
                 CitationEvidence(
                     review_id=doc["review_id"],
@@ -108,20 +127,41 @@ class OlistRAGPipeline:
         rerank_n: int = 5,
         llm: Optional[BaseChatModel] = None,
     ) -> InsightResponse:
+        telemetry: Dict[str, Any] = {}
+        start_total = time.perf_counter()
         logger.info(f"Processando consulta RAG: '{query}'")
 
-        # 1. Recuperação Híbrida (BM25 + ChromaDB)
+        # 1. Embedding da Consulta
+        t0 = time.perf_counter()
+        query_vec = self._embed_query_vector(query)
+        telemetry["embedding_ms"] = round((time.perf_counter() - t0) * 1000, 2)
+
+        # 2. Avaliação no Cache Semântico
+        cached_result = self.cache.get(query_vec)
+        if cached_result:
+            logger.info("Retornando resposta direta do Semantic Cache.")
+            return InsightResponse(**cached_result["data"])
+
+        # 3. Análise de Intenção e Filtros
+        filters = QueryAnalyzer.extract_filters(query)
+
+        # 4. Recuperação Híbrida (BM25 + ChromaDB)
+        t1 = time.perf_counter()
         candidates = self.hybrid_engine.search(query, top_k=retrieval_k)
+        telemetry["hybrid_retrieval_ms"] = round((time.perf_counter() - t1) * 1000, 2)
 
-        # 2. Re-ranking com Cross-Encoder
+        # 5. Re-ranking Neural (Cross-Encoder)
+        t2 = time.perf_counter()
         ranked_evidences = self.reranker.rerank(query, candidates, top_n=rerank_n)
+        telemetry["neural_rerank_ms"] = round((time.perf_counter() - t2) * 1000, 2)
 
-        # 3. Formatação do Contexto para o Prompt
+        # 6. Formatação de Contexto
         context_str = self._format_context(ranked_evidences)
 
-        # 4. Geração com LLM e tratamento de fallback para 429/503
+        # 7. Geração com LLM e Fallback Resiliente
+        t3 = time.perf_counter()
         try:
-            current_llm = llm or get_chat_model("gemini-3.6-flash")
+            current_llm = llm or get_chat_model()
             structured_llm = current_llm.with_structured_output(InsightResponse)
             chain = self.prompt | structured_llm
 
@@ -129,51 +169,26 @@ class OlistRAGPipeline:
                 "context": context_str,
                 "query": query,
             })
-            return response
+            telemetry["llm_generation_ms"] = round((time.perf_counter() - t3) * 1000, 2)
+            telemetry["source"] = "LLM_INFERENCE"
 
         except Exception as exc:
             err_msg = str(exc).lower()
-            if (
-                "429" in err_msg
-                or "resource_exhausted" in err_msg
-                or "quota" in err_msg
-                or "503" in err_msg
-                or "unavailable" in err_msg
-            ):
-                logger.warning(
-                    f"Instabilidade ou limite de cota detectado na API do provedor: {exc}. "
-                    f"Ativando síntese determinística de contingência sobre as evidências..."
-                )
-                return self._generate_fallback_insight(query, ranked_evidences)
-            
-            raise exc
+            if any(k in err_msg for k in ["429", "resource_exhausted", "quota", "503", "unavailable"]):
+                logger.warning(f"Instabilidade na API ({exc}). Ativando fallback determinístico...")
+                response = self._generate_fallback_insight(query, ranked_evidences)
+                telemetry["llm_generation_ms"] = round((time.perf_counter() - t3) * 1000, 2)
+                telemetry["source"] = "CONTINGENCY_FALLBACK"
+            else:
+                raise exc
 
+        telemetry["total_pipeline_s"] = round(time.perf_counter() - start_total, 2)
 
-if __name__ == "__main__":
-    parquet_path = settings.DATA_PROCESSED_DIR / "olist_reviews_clean.parquet"
-    if not parquet_path.exists():
-        raise FileNotFoundError(f"Parquet não encontrado em: {parquet_path}")
+        # Armazenar no cache vetorial
+        self.cache.put(query_vec, {
+            "data": response.model_dump(),
+            "telemetry": telemetry,
+            "filters": filters
+        })
 
-    logger.info("Carregando base de avaliações processada...")
-    df_all = pd.read_parquet(parquet_path)
-    df_sample = df_all.sample(n=min(300, len(df_all)), random_state=42)
-
-    pipeline = OlistRAGPipeline(df_sample)
-
-    query_executiva = "Quais os principais problemas relatados sobre produtos com defeito e atendimento?"
-    print(f"\nDisparando pergunta executiva: '{query_executiva}'\n")
-
-    try:
-        resultado = pipeline.generate_insight(query_executiva)
-        print("=" * 60)
-        print("RESPOSTA ESTRUTURADA (INSIGHT RESPONSE)")
-        print("=" * 60)
-        print(f"Resumo Executivo: {resultado.executive_summary}\n")
-        print(f"Tendência de Sentimento: {resultado.sentiment_trend}")
-        print(f"Causas Raiz: {', '.join(resultado.key_root_causes)}")
-        print(f"Recomendações: {resultado.actionable_recommendations}\n")
-        print("Citações:")
-        for cit in resultado.citations:
-            print(f" - [{cit.review_id}] ({cit.review_score}★): {cit.excerpt}")
-    except Exception as e:
-        print(f"\n[Atenção na execução]: {e}")
+        return response
