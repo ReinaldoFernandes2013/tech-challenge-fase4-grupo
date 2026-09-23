@@ -62,6 +62,41 @@ O pipeline de engenharia foi desenhado segundo os padrões de ponta (SOTA) para 
 * **Reordenação Neural (Cross-Encoder FlashRank):** Avalia os pares pergunta-documento via mecanismo de atenção conjunto, reduzindo o volume de contexto e eliminando ruídos antes do LLM.
 * **Contrato Estruturado (Pydantic):** A resposta executiva é compilada no schema `InsightResponse`, compreendendo resumo executivo, sentimento, causas-raiz, ações operacionais recomendadas e citações literais com notas (`review_score`) e cálculo de atraso (`delivery_delay_days`).
 
+
+## 📸 Cockpit Executivo & Visualização Operacional
+
+O sistema disponibiliza uma interface estratégica em **Streamlit** integrada à API FastAPI em tempo real, fornecendo visibilidade multidimensional aos tomadores de decisão:
+
+### 1. Diagnóstico Executivo C-Level & Recomendações Operacionais
+
+Síntese imediata dos gargalos logísticos, causas-raiz mapeadas e plano de ação sugerido com base nos comentários:
+
+![Diagnóstico Executivo](docs/images/dashboard_executive.png)
+
+---
+
+### 2. Análise Visual de Risco & Satisfação (CSAT)
+
+Distribuição do índice de avaliação dos clientes recuperados e velocímetro com o nível de risco calculado:
+
+![Análise de Satisfação](docs/images/dashboard_charts.png)
+
+---
+
+### 3. Funil de Compressão e Redução de Ruído Semântico
+
+Demonstração visual do pipeline de recuperação: da filtragem primária da base até a injeção contextual no LLM:
+
+![Funil de Recuperação](docs/images/dashboard_funnel.png)
+
+---
+
+### 4. Rastreabilidade Factual & Auditoria de Evidências Reais
+
+Garantia de 100% de ancoragem factual com identificação explícita de cada `review_id` original do dataset:
+
+![Auditoria de Evidências](docs/images/dashboard_evidence.png)
+
 ## 3. Avaliação Formal: Tríade de RAG (Auditoria de Governação)
 
 Em cumprimento aos critérios de avaliação académica e científica, o sistema foi auditado através do módulo `src/evaluation/benchmark.py`, mensurando as três dimensões da  **Tríade de RAG** :
