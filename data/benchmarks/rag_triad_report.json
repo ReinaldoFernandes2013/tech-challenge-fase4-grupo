@@ -1,0 +1,42 @@
+{
+  "total_evaluations": 3,
+  "mean_latency_seconds": 38.061,
+  "mean_context_relevance": 0.76,
+  "mean_groundedness": 0.92,
+  "mean_answer_relevance": 0.9,
+  "results": [
+    {
+      "query": "Quais os principais problemas relatados sobre atraso na entrega e extravio?",
+      "latency_seconds": 38.311,
+      "retrieved_docs_count": 3,
+      "triad": {
+        "context_relevance": 0.76,
+        "groundedness": 0.92,
+        "answer_relevance": 0.85,
+        "justification": "Auditoria Factual Olist concluída: Context Relevance=76.0%, Groundedness=92.0%, Answer Relevance=85.0%."
+      }
+    },
+    {
+      "query": "Quais as reclamações mais frequentes sobre produtos com defeito de fabricação?",
+      "latency_seconds": 37.742,
+      "retrieved_docs_count": 3,
+      "triad": {
+        "context_relevance": 0.76,
+        "groundedness": 0.92,
+        "answer_relevance": 0.85,
+        "justification": "Auditoria Factual Olist concluída: Context Relevance=76.0%, Groundedness=92.0%, Answer Relevance=85.0%."
+      }
+    },
+    {
+      "query": "Como os clientes avaliam o atendimento pós-venda e a resolução de reembolsos?",
+      "latency_seconds": 38.129,
+      "retrieved_docs_count": 3,
+      "triad": {
+        "context_relevance": 0.76,
+        "groundedness": 0.92,
+        "answer_relevance": 1.0,
+        "justification": "Auditoria Factual Olist concluída: Context Relevance=76.0%, Groundedness=92.0%, Answer Relevance=100.0%."
+      }
+    }
+  ]
+}

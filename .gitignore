@@ -1,0 +1,34 @@
+# Ambientes virtuais
+.venv/
+venv/
+ENV/
+env/
+
+# Caches do Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyd
+
+# Caches de Teste e Ferramentas
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# Variáveis de ambiente secretas
+.env
+.env.local
+
+# Modelos, Bancos Vetoriais e Ficheiros Pesados (>50MB)
+data/models/
+data/processed/chroma_db/
+*.safetensors
+*.bin
+*.onnx
+*.dll
+
+# Ficheiros do Sistema Operacional
+.DS_Store
+Thumbs.db
