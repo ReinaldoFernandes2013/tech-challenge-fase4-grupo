@@ -1,66 +1,57 @@
-import re
-from typing import Set
+﻿from langchain_core.prompts import ChatPromptTemplate
 from src.core.logging import logger
 from src.schemas.eval_schema import RAGTriadMetric
-
-# Conjunto de stopwords para mitigar penalizações indevidas de conectivos e focar nos termos factuais
-STOPWORDS = {
-    "que", "para", "com", "não", "uma", "por", "mais", "dos", "das", "como",
-    "mas", "foi", "seu", "sua", "ou", "quando", "muito", "nos", "já", "eu",
-    "também", "só", "pelo", "pela", "até", "isso", "ela", "entre", "depois",
-    "sem", "mesmo", "aos", "seus", "quem", "nas", "meu", "esse", "eles", "está",
-    "onde", "estou", "base", "relato", "relatos", "documentos", "pedido", "pedidos"
-}
-
+from src.rag.pipeline import get_chat_model
 
 class RAGTriadEvaluator:
-    """Avaliador determinístico e matemático da Tríade de RAG (Imune a 429/Quotas)."""
+    """Avaliador da Tríade de RAG utilizando LLM-as-a-Judge real."""
 
     def __init__(self, judge_llm=None):
-        self.llm = judge_llm
+        self.llm = judge_llm or get_chat_model()
+        self.structured_llm = self.llm.with_structured_output(RAGTriadMetric)
+        
+        self.eval_prompt = ChatPromptTemplate.from_messages([
+            ("system", """Você é um juiz imparcial avaliando a qualidade de um sistema RAG (Retrieval-Augmented Generation).
+Você deve avaliar a Tríade de RAG dando notas rigorosas e fracionadas (ex: 0.1, 0.5, 0.8) de 0.0 a 1.0 para os 3 critérios abaixo, e fornecer uma justificativa clara.
 
-    def _tokenize(self, text: str) -> Set[str]:
-        """Normalização, extração léxica e filtragem de stopwords estruturais."""
-        words = re.findall(r"\b[a-zA-ZáéíóúãõâêîôûçÁÉÍÓÚÃÕÂÊÎÔÛÇ]{3,}\b", text.lower())
-        return {w for w in words if w not in STOPWORDS}
+Critérios:
+1. Context Relevance: O contexto fornecido contém informações úteis para responder à pergunta?
+   (0.0 = totalmente inútil, 1.0 = contém a resposta exata e sem ruído)
+2. Groundedness (Fidelidade Factual): Todas as afirmações da resposta (números, motivos, conclusões) estão ESTRITAMENTE baseadas no contexto?
+   (0.0 = alucinação total ou invenção de dados, 1.0 = 100% ancorado no contexto sem adições não comprovadas)
+3. Answer Relevance: A resposta fornecida endereça a pergunta original do usuário sem divagar?
+   (0.0 = evasiva ou off-topic, 1.0 = responde perfeitamente e vai direto ao ponto)
+"""),
+            ("human", """Por favor, avalie o seguinte cenário:
+
+PERGUNTA DO USUÁRIO:
+{query}
+
+CONTEXTO RECUPERADO:
+{context}
+
+RESPOSTA GERADA PELO SISTEMA:
+{answer}
+
+Gere o resultado da avaliação com notas precisas e justas de 0.0 a 1.0.""")
+        ])
+        
+        self.chain = self.eval_prompt | self.structured_llm
 
     def evaluate(self, query: str, context: str, answer: str) -> RAGTriadMetric:
-        """Calcula formalmente Context Relevance, Groundedness e Answer Relevance sem viés de stopwords."""
-        q_tokens = self._tokenize(query)
-        c_tokens = self._tokenize(context)
-        a_tokens = self._tokenize(answer)
-
-        # 1. Context Relevance: aderência dos trechos recuperados em relação à pergunta
-        if not q_tokens or not c_tokens:
-            ctx_score = 0.78
-        else:
-            q_in_c = len(q_tokens.intersection(c_tokens)) / len(q_tokens)
-            ctx_score = min(1.0, max(0.76, round(q_in_c + 0.35, 2)))
-
-        # 2. Groundedness (Fidelidade factual estrita focada em entidades e substantivos reais)
-        if not a_tokens or not c_tokens:
-            groundedness_score = 0.95
-        else:
-            a_in_c = len(a_tokens.intersection(c_tokens)) / len(a_tokens)
-            groundedness_score = min(1.0, max(0.92, round(a_in_c + 0.50, 2)))
-
-        # 3. Answer Relevance: alinhamento semântico entre o vocabulário da resposta e a query
-        if not q_tokens or not a_tokens:
-            ans_score = 0.85
-        else:
-            q_in_a = len(q_tokens.intersection(a_tokens)) / len(q_tokens)
-            ans_score = min(1.0, max(0.85, round(q_in_a + 0.45, 2)))
-
-        justification = (
-            f"Auditoria Factual Olist concluída: "
-            f"Context Relevance={ctx_score*100:.1f}%, "
-            f"Groundedness={groundedness_score*100:.1f}%, "
-            f"Answer Relevance={ans_score*100:.1f}%."
-        )
-
-        return RAGTriadMetric(
-            context_relevance=ctx_score,
-            groundedness=groundedness_score,
-            answer_relevance=ans_score,
-            justification=justification,
-        )
+        """Calcula Context Relevance, Groundedness e Answer Relevance usando LLM-as-a-Judge."""
+        try:
+            metric = self.chain.invoke({
+                "query": query,
+                "context": context,
+                "answer": answer
+            })
+            return metric
+        except Exception as e:
+            logger.error(f"Falha no LLM-as-a-Judge: {e}")
+            return RAGTriadMetric(
+                context_relevance=0.0,
+                groundedness=0.0,
+                answer_relevance=0.0,
+                justification=f"Erro de avaliação: {e}"
+            )

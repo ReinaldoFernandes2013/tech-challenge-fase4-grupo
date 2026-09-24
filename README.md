@@ -57,6 +57,17 @@ O pipeline de engenharia foi desenhado segundo os padrões de ponta (SOTA) para 
 
 ### Componentes Chave:
 
+
+### Limitações e Decisões Arquiteturais Conhecidas:
+* **Métrica de Groundedness:** O Groundedness calculado em tempo de execução no pipeline.py atua como uma métrica de precisão (*precision*) das citações retornadas pelo LLM contra o contexto fornecido. Ele mede o quanto das afirmações feitas e IDs citados realmente existem no contexto (penalizando alucinações), e não a cobertura de todos os documentos recuperados.
+* **Calibração do Threshold (Fallback 1):** O limiar de corte do re-ranqueador (0.10) foi estabelecido via calibração baseada em dados, usando uma amostragem inicial de 15 perguntas (10 in-domain, 5 out-of-domain). Observou-se uma margem estreita (~0.058) em relação ao outlier válido mais baixo (0.1585 - "satisfação com os vendedores"). Sendo uma amostra pequena, perguntas de fraseado mais vago podem ser falsamente rejeitadas. **Recomendação:** O threshold deve ser recalibrado em produção se o time perceber aumento de falsos positivos do Fallback 1.
+* **Viés de Auto-avaliação (LLM-as-a-Judge):** No avaliador da Tríade RAG (
+ag_triad.py), a utilização do mesmo modelo/família de LLM para gerar a resposta e julgá-la embute um viés sistêmico conhecido na literatura, podendo gerar notas de Answer Relevance e Groundedness infladas.
+
+* **Tratamento de Valores Ausentes:** (Requisito Fase 4) Comentários textuais são o núcleo de um sistema RAG. Registros da base original que não possuíam texto de review (nulos, NaN ou strings vazias) foram estrategicamente descartados durante a etapa de indexação (scripts/index_data.py), pois não agregam valor à busca vetorial ou BM25.
+* **Roteador Semântico (Filtro por UF):** O desafio opcional de roteamento/filtro semântico por estado (UF) foi projetado no QueryAnalyzer, mas listado como *Trabalho Futuro*. A coluna customer_state não está unificada no atual olist_reviews_clean.parquet (necessitaria de join com olist_customers_dataset), portanto o filtro espacial está desativado no pipeline atual para garantir a estabilidade do RAG.
+
+
 * **Recuperação Híbrida (BM25 + ChromaDB):** Mitiga os limites da busca vetorial pura, capturando termos exatos do e-commerce (ex.: "estraviou", "atrasou", nomes de peças) e relações semânticas densas.
 * **Fusão RRF (Reciprocal Rank Fusion):** Equilibra as classificações dos candidatos léxicos e densos de forma agnóstica à escala.
 * **Reordenação Neural (Cross-Encoder FlashRank):** Avalia os pares pergunta-documento via mecanismo de atenção conjunto, reduzindo o volume de contexto e eliminando ruídos antes do LLM.

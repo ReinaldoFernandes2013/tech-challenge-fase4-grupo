@@ -50,7 +50,8 @@ class OlistVectorStore:
 
         for i in range(0, len(documents), batch_size):
             batch = documents[i : i + batch_size]
-            store.add_documents(batch)
+            ids = [doc.metadata["review_id"] for doc in batch]
+            store.add_documents(batch, ids=ids)
             logger.info(f"Lote {i // batch_size + 1}/{total_batches} concluído.")
 
         logger.info("Indexação vetorial finalizada com sucesso.")
@@ -73,3 +74,5 @@ class OlistVectorStore:
                 "retriever_type": "vector",
             })
         return results
+
+

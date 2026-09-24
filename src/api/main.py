@@ -17,17 +17,14 @@ state = {}
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Ciclo de vida: carrega o dataset e inicializa o pipeline uma única vez."""
-    parquet_path = settings.DATA_PROCESSED_DIR / "olist_reviews_clean.parquet"
+    parquet_path = settings.DATA_PROCESSED_DIR / "olist_indexed_sample.parquet"
     if not parquet_path.exists():
         logger.error(f"Base de dados não encontrada em: {parquet_path}")
         raise RuntimeError(f"Base Parquet ausente: {parquet_path}")
 
     logger.info("A carregar dataset e a instanciar o pipeline Olist RAG...")
-    df_all = pd.read_parquet(parquet_path)
-    # Amostra de validação para inicialização rápida e estável
-    df_sample = df_all.sample(n=min(500, len(df_all)), random_state=42)
-
-    state["pipeline"] = OlistRAGPipeline(df_sample)
+    df_indexed = pd.read_parquet(parquet_path)
+    state["pipeline"] = OlistRAGPipeline(df_indexed)
     logger.info("Pipeline RAG inicializado com sucesso e pronto para receber requisições.")
     yield
     state.clear()
