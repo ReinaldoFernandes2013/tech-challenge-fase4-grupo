@@ -196,7 +196,14 @@ DATA_PROCESSED_DIR="data/processed"
 VECTOR_STORE_DIR="data/vector_store"
 ```
 
-1. Iniciar a API FastAPI:
+1. **Pré-processamento e Indexação (OBRIGATÓRIO):**
+   Antes de subir a aplicação, você precisa popular o banco vetorial e criar as bases do BM25:
+
+`Shell
+python scripts/index_data.py
+`
+
+2. Iniciar a API FastAPI:
 
 ```Shell
 uvicorn src.api.main:app --reload --port 8000
