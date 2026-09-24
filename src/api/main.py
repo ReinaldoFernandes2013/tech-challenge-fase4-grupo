@@ -25,7 +25,13 @@ async def lifespan(app: FastAPI):
     logger.info("A carregar dataset e a instanciar o pipeline Olist RAG...")
     df_all = pd.read_parquet(parquet_path)
     # Amostra de validação para inicialização rápida e estável
-    df_sample = df_all.sample(n=min(500, len(df_all)), random_state=42)
+    df_sample = df_all.sample(n=min(500, len(df_all)), random_state=42).copy()
+
+    # Compatibilização de esquema: assegura que 'clean_comment' e 'text' coexistam
+    if "clean_comment" not in df_sample.columns and "text" in df_sample.columns:
+        df_sample["clean_comment"] = df_sample["text"]
+    elif "text" not in df_sample.columns and "clean_comment" in df_sample.columns:
+        df_sample["text"] = df_sample["clean_comment"]
 
     state["pipeline"] = OlistRAGPipeline(df_sample)
     logger.info("Pipeline RAG inicializado com sucesso e pronto para receber requisições.")
