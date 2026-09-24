@@ -54,14 +54,12 @@ O pipeline de engenharia foi desenhado segundo os padrões de ponta (SOTA) para 
                    [ Dashboard Streamlit ] & [ OpenAPI / FastAPI ]
 ```
 
-
 ### Componentes Chave:
 
 * **Recuperação Híbrida (BM25 + ChromaDB):** Mitiga os limites da busca vetorial pura, capturando termos exatos do e-commerce (ex.: "estraviou", "atrasou", nomes de peças) e relações semânticas densas.
 * **Fusão RRF (Reciprocal Rank Fusion):** Equilibra as classificações dos candidatos léxicos e densos de forma agnóstica à escala.
 * **Reordenação Neural (Cross-Encoder FlashRank):** Avalia os pares pergunta-documento via mecanismo de atenção conjunto, reduzindo o volume de contexto e eliminando ruídos antes do LLM.
 * **Contrato Estruturado (Pydantic):** A resposta executiva é compilada no schema `InsightResponse`, compreendendo resumo executivo, sentimento, causas-raiz, ações operacionais recomendadas e citações literais com notas (`review_score`) e cálculo de atraso (`delivery_delay_days`).
-
 
 ## 📸 Cockpit Executivo & Visualização Operacional
 
@@ -97,22 +95,27 @@ Garantia de 100% de ancoragem factual com identificação explícita de cada `re
 
 ![Auditoria de Evidências](docs/images/dashboard_evidence.png)
 
-## 3. Avaliação Formal: Tríade de RAG (Auditoria de Governação)
+## 3. Avaliação Formal & Benchmark de Recuperação
 
-Em cumprimento aos critérios de avaliação académica e científica, o sistema foi auditado através do módulo `src/evaluation/benchmark.py`, mensurando as três dimensões da  **Tríade de RAG** :
+A arquitetura de recuperação foi avaliada no caderno `02_embeddings_eval.ipynb` comparando abordagens esparsas, densas e híbridas:
 
-| **Dimensão da Tríade**              | **Pontuação Obtida** | **Meta Académica** | **Estado de Conformidade** |
-| ------------------------------------------- | ---------------------------- | ------------------------- | -------------------------------- |
-| **Context Relevance**                 | **76.0%**              | **$\ge 75.0\%$**  | ✅**Aprovado**             |
-| **Groundedness (Fidelidade Factual)** | **92.0%**              | **$\ge 90.0\%$**  | ✅**Aprovado**             |
-| **Answer Relevance**                  | **90.0%**              | **$\ge 80.0\%$**  | ✅**Aprovado**             |
+| Método de Recuperação                     | Latência Média | Capacidade Semântica        | Captura Léxica Exata           |
+| :------------------------------------------- | :--------------- | :--------------------------- | :------------------------------ |
+| **BM25 Puro (Sparse)**                 | ~41.3 ms         | Baixa (termo exato)          | Alta (termos literais)          |
+| **Dense Puro (Sentence Transformers)** | ~941.9 ms        | Alta (similaridade)          | Média (sensível a sinónimos) |
+| **Híbrido RRF (k=60)**                | ~69.1 ms         | Alta                         | Alta                            |
+| **Two-Stage (RRF + FlashRank)**        | ~97.8 ms         | Muito Alta (Cross-Attention) | Muito Alta                      |
 
-> O relatório de auditoria detalhado encontra-se persistido em `data/benchmarks/rag_triad_report.json`.
+### Exemplos de Consultas Auditadas
+
+* **Consulta Real:** `"Produto com defeito e atendimento péssimo no pós-venda"`
+  * **Comportamento:** O sistema recuperou evidências de clientes insatisfeitos com artigos avariados e gerou o diagnóstico estruturado via Gemini.
+* **Consulta Fora do Domínio (Abstenção):** `"Como calcular a rota mais rápida para o aeroporto?"`
+  * **Comportamento:** Como o score de relevância fica abaixo do limiar, o modelo responde: *"Não foram encontradas evidências suficientes na base de dados da Olist para responder a esta questão."*
 
 ## 4. Estrutura do Repositório
 
 tech-challenge-fase4-grupo/
-
 
 ```text
 tech-challenge-fase4-grupo/
@@ -137,8 +140,6 @@ tech-challenge-fase4-grupo/
 └── requirements.txt         # Dependências do projeto
 ```
 
-
-
 ## 5. Instruções de Execução
 
 ### Opção A: Execução Nativa (Ambiente Virtual)
@@ -155,7 +156,6 @@ cd tech-challenge-fase4-grupo
 ```Shell
 python -m venv .venv
 ```
-
 
 # Windows (Git Bash):
 
@@ -202,7 +202,6 @@ streamlit run src/app.py
 
 	Interface gráfica: `http://localhost:8501`
 
-
 ### Opção B: Execução via Docker Compose
 
 Para arrancar toda a infraestrutura com um único comando:
@@ -211,10 +210,8 @@ Para arrancar toda a infraestrutura com um único comando:
 docker compose up --build
 ```
 
-
 * **API FastAPI:** `http://localhost:8000`
 * **Streamlit Dashboard:** `http://localhost:8501`
-
 
 6. Validação e Testes Automatizados
 
