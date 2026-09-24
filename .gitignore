@@ -32,3 +32,13 @@ data/processed/chroma_db/
 # Ficheiros do Sistema Operacional
 .DS_Store
 Thumbs.db
+
+# Arquivos de log/debug gerados localmente
+diff_index_data.txt
+manual_test.log
+run_test_final.log
+run_test_final2.log
+test_output.txt
+
+# Arquivos gerados por scripts do pipeline (muito pesados para o Git)
+data/processed/olist_indexed_sample.parquet
