@@ -35,3 +35,11 @@ class InsightResponse(BaseModel):
         default=1.0,
         description="Score interno de ancoragem (0 a 1), baseado na fidelidade às evidências."
     )
+
+class LLMOutputSchema(BaseModel):
+    """Schema interno apenas para extracao do LLM."""
+    executive_summary: str = Field(description="Resumo executivo direto respondendo a dor ou duvida levantada.")
+    sentiment_trend: str = Field(description="Tendencia geral do sentimento: 'Critico/Negativo', 'Neutro' ou 'Positivo'.")
+    key_root_causes: List[str] = Field(description="Causas raiz identificadas nos comentarios.")
+    actionable_recommendations: List[str] = Field(description="Acoes praticas recomendadas.")
+    cited_review_ids: List[str] = Field(description="Lista contendo APENAS os review_id exatos dos documentos utilizados para basear a resposta. Nunca invente um ID.")

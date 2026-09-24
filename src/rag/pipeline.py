@@ -11,7 +11,7 @@ from src.indexing.hybrid_indexer import HybridSearchEngine
 from src.rag.prompts import get_rag_prompt
 from src.rag.reranker import CrossEncoderReranker
 from src.rag.router import SemanticCache, QueryAnalyzer
-from src.schemas.rag_schema import CitationEvidence, InsightResponse
+from src.schemas.rag_schema import CitationEvidence, InsightResponse, LLMOutputSchema
 
 load_dotenv(override=True)
 
@@ -151,36 +151,90 @@ class OlistRAGPipeline:
         ranked_evidences = self.reranker.rerank(query, candidates, top_n=rerank_n)
         telemetry["neural_rerank_ms"] = round((time.perf_counter() - t2) * 1000, 2)
 
-        # 6. Formatação de Contexto
+        # 6. Fallback 1: Insufficient Evidence
+        max_score = max([doc.get('rerank_score', 0.0) for doc in ranked_evidences]) if ranked_evidences else 0.0
+        if not ranked_evidences or max_score < 0.10:
+            logger.warning(f"Evidências insuficientes (max_score={max_score:.4f}). Ativando Fallback 1...")
+            response = InsightResponse(
+                query=query,
+                executive_summary="Não encontramos evidências suficientes no banco de avaliações para responder a esta pergunta com o nível de confiança exigido.",
+                sentiment_trend="Neutro",
+                key_root_causes=["Informação não disponível no dataset analisado."],
+                actionable_recommendations=["Tente reformular a pergunta ou remover filtros excessivos."],
+                citations=[],
+                groundedness_score=0.0
+            )
+            telemetry["llm_generation_ms"] = 0.0
+            telemetry["source"] = "Fallback_InsufficientEvidence"
+            telemetry["total_pipeline_s"] = round(time.perf_counter() - start_total, 2)
+            return response
+
+        # 6.5 Formatação de Contexto
         context_str = self._format_context(ranked_evidences)
 
         # 7. Geração com LLM e Fallback Resiliente
         t3 = time.perf_counter()
         try:
             current_llm = llm or get_chat_model()
-            structured_llm = current_llm.with_structured_output(InsightResponse)
+            structured_llm = current_llm.with_structured_output(LLMOutputSchema)
             chain = self.prompt | structured_llm
 
-            response: InsightResponse = chain.invoke({
+            llm_response = chain.invoke({
                 "context": context_str,
                 "query": query,
             })
+            
+            citations_list = []
+            valid_ids = 0
+            evidences_map = {doc["review_id"]: doc for doc in ranked_evidences}
+            
+            for rid in llm_response.cited_review_ids:
+                if rid in evidences_map:
+                    doc = evidences_map[rid]
+                    clean_text = doc["text"].replace("\n", " ").strip()
+                    excerpt = clean_text[:180] + ("..." if len(clean_text) > 180 else "")
+                    
+                    citations_list.append(CitationEvidence(
+                        review_id=rid,
+                        review_score=int(doc.get("review_score", 1)),
+                        delivery_delay_days=float(doc.get("delivery_delay_days", 0.0)),
+                        excerpt=excerpt
+                    ))
+                    valid_ids += 1
+                else:
+                    logger.warning(f"Alucinação de ID detectada: o LLM citou '{rid}' ausente nos documentos recuperados.")
+            
+            total_returned = len(llm_response.cited_review_ids)
+            computed_groundedness = (valid_ids / total_returned) if total_returned > 0 else 0.0
+
+            response = InsightResponse(
+                query=query,
+                executive_summary=llm_response.executive_summary,
+                sentiment_trend=llm_response.sentiment_trend,
+                key_root_causes=llm_response.key_root_causes,
+                actionable_recommendations=llm_response.actionable_recommendations,
+                citations=citations_list,
+                groundedness_score=round(computed_groundedness, 2)
+            )
+
             telemetry["llm_generation_ms"] = round((time.perf_counter() - t3) * 1000, 2)
-            telemetry["source"] = "LLM_INFERENCE"
+            telemetry["source"] = "LLM"
 
         except Exception as exc:
             logger.warning(f"Exceção na chamada de LLM ({exc}). Ativando fallback determinístico...")
             response = self._generate_fallback_insight(query, ranked_evidences)
             telemetry["llm_generation_ms"] = round((time.perf_counter() - t3) * 1000, 2)
-            telemetry["source"] = "CONTINGENCY_FALLBACK"
+            telemetry["source"] = "Fallback_LLMError"
 
         telemetry["total_pipeline_s"] = round(time.perf_counter() - start_total, 2)
 
-        # Armazenar no cache vetorial
-        self.cache.put(query_vec, {
-            "data": response.model_dump(),
-            "telemetry": telemetry,
-            "filters": filters
-        })
+        # Armazenar no cache vetorial (ignorando fallbacks para nao viciar o cache)
+        if not telemetry["source"].startswith("Fallback"):
+            self.cache.put(query_vec, {
+                "data": response.model_dump(),
+                "telemetry": telemetry,
+                "filters": filters
+            })
 
         return response
+

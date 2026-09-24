@@ -127,8 +127,8 @@ if st.button("🚀 Disparar Pipeline RAG & Auditoria Factual", type="primary", u
                         avg_score = df_citations["review_score"].mean() if not df_citations.empty else 0
                         st.metric("⭐ CSAT Médio Recuperado", f"{avg_score:.2f} / 5.0", delta=f"{avg_score-5.0:.1f}", delta_color="inverse")
                     with k3:
-                        groundedness = insight.get("groundedness_score", 1.0) * 100
-                        st.metric("🛡️ Groundedness (Fidelidade)", f"{groundedness:.0f}%", "Zero Alucinação")
+                        citation_precision = insight.get("groundedness_score", 1.0) * 100
+                        st.metric("🎯 Honestidade das Citações", f"{citation_precision:.0f}%")
                     with k4:
                         trend = insight.get("sentiment_trend", "Neutro")
                         st.metric("📈 Sentimento Predominante", trend)
