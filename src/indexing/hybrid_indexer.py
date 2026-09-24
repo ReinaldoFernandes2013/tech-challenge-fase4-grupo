@@ -67,44 +67,4 @@ class HybridSearchEngine:
         return final_docs
 
 
-if __name__ == "__main__":
-    parquet_path = settings.DATA_PROCESSED_DIR / "olist_reviews_clean.parquet"
-    if not parquet_path.exists():
-        raise FileNotFoundError(
-            f"Parquet não encontrado em: {parquet_path}. Execute o loader primeiro."
-        )
 
-    logger.info("A carregar base processada...")
-    df_all = pd.read_parquet(parquet_path)
-
-    # Amostra controlada para teste rápido e seguro
-    sample_size = min(300, len(df_all))
-    df_sample = df_all.sample(n=sample_size, random_state=42)
-    logger.info(f"Amostra selecionada para validação: {sample_size} registos.")
-
-    # 1. Indexação em lotes pequenos e controlados (50 em 50)
-    vstore = OlistVectorStore()
-    vstore.index_dataframe(df_sample, batch_size=50)
-
-    # 2. Inicializar motor híbrido e re-ranker
-    hybrid_engine = HybridSearchEngine(df_sample)
-    reranker = CrossEncoderReranker()
-
-    # 3. Teste de consulta
-    query_teste = "O produto chegou com defeito e o atendimento não ajudou"
-    logger.info(f"\n--- A testar recuperação para a pergunta: '{query_teste}' ---")
-
-    candidatos = hybrid_engine.search(query_teste, top_k=10)
-    top_evidencias = reranker.rerank(query_teste, candidatos, top_n=3)
-
-    print("\n" + "=" * 60)
-    print("RESULTADO DAS 3 MELHORES EVIDÊNCIAS APÓS RE-RANKING:")
-    print("=" * 60)
-    for idx, ev in enumerate(top_evidencias, 1):
-        print(
-            f"\n[{idx}] Review ID: {ev['review_id']} | Avaliação: {ev['review_score']} estrelas"
-        )
-        print(
-            f"    RRF Score: {ev.get('rrf_score', 0):.4f} | Rerank Score: {ev.get('rerank_score', 0):.4f}"
-        )
-        print(f"    Texto: {ev['text']}")

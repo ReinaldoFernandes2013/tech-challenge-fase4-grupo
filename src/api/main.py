@@ -17,23 +17,25 @@ state = {}
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Ciclo de vida: carrega o dataset e inicializa o pipeline uma única vez."""
-    parquet_path = settings.DATA_PROCESSED_DIR / "olist_reviews_clean.parquet"
+    parquet_path = settings.DATA_PROCESSED_DIR / "olist_indexed_sample.parquet"
     if not parquet_path.exists():
         logger.error(f"Base de dados não encontrada em: {parquet_path}")
         raise RuntimeError(f"Base Parquet ausente: {parquet_path}")
 
     logger.info("A carregar dataset e a instanciar o pipeline Olist RAG...")
-    df_all = pd.read_parquet(parquet_path)
-    # Amostra de validação para inicialização rápida e estável
-    df_sample = df_all.sample(n=min(500, len(df_all)), random_state=42).copy()
+    
+    # Usa a base COMPLETA que foi indexada (mesma do ChromaDB e do BM25).
+    # NAO amostrar aqui: BM25 e Chroma precisam enxergar os mesmos documentos.
+    df_indexed = pd.read_parquet(parquet_path)
 
-    # Compatibilização de esquema: assegura que 'clean_comment' e 'text' coexistam
-    if "clean_comment" not in df_sample.columns and "text" in df_sample.columns:
-        df_sample["clean_comment"] = df_sample["text"]
-    elif "text" not in df_sample.columns and "clean_comment" in df_sample.columns:
-        df_sample["text"] = df_sample["clean_comment"]
+    # Compatibilizacao de esquema: assegura que 'clean_comment' e 'text' coexistam
+    if "clean_comment" not in df_indexed.columns and "text" in df_indexed.columns:
+        df_indexed["clean_comment"] = df_indexed["text"]
+    elif "text" not in df_indexed.columns and "clean_comment" in df_indexed.columns:
+        df_indexed["text"] = df_indexed["clean_comment"]
 
-    state["pipeline"] = OlistRAGPipeline(df_sample)
+    state["pipeline"] = OlistRAGPipeline(df_indexed)
+    
     logger.info("Pipeline RAG inicializado com sucesso e pronto para receber requisições.")
     yield
     state.clear()
