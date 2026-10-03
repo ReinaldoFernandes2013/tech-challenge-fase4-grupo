@@ -42,3 +42,4 @@ test_output.txt
 
 # Arquivos gerados por scripts do pipeline (muito pesados para o Git)
 data/processed/olist_indexed_sample.parquet
+notebooks/data/
