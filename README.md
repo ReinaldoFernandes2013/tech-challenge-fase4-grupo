@@ -6,10 +6,8 @@
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.110+-009688.svg)](https://fastapi.tiangolo.com/)
 [![Streamlit](https://img.shields.io/badge/Streamlit-1.32+-FF4B4B.svg)](https://streamlit.io/)
 [![ChromaDB](https://img.shields.io/badge/VectorStore-ChromaDB-orange.svg)](https://www.trychroma.com/)
-[![Tests](<https://img.shields.io/badge/Tests-Pytest%20(6%2F6%20Passed)-brightgreen.svg>)]()
+[![Tests](<https://img.shields.io/badge/Tests-Pytest%20(31%2F31%20Passed)-brightgreen.svg>)]()
 [![RAG Triad](<https://img.shields.io/badge/Audit-RAG%20Triad%20Passed-success.svg>)]()
-
----
 
 ## 1. Visão Geral e Contexto de Negócio
 
@@ -18,6 +16,7 @@ No ecossistema de comércio eletrónico da **Olist**, os registos de avaliaçõe
 Este projeto disponibiliza uma solução corporativa de ponta a ponta assente numa arquitetura de **Recuperação Aumentada por Geração Híbrida (Hybrid RAG)**. O sistema transforma comentários não estruturados em relatórios executivos acionáveis de nível C-Level, assegurando **zero alucinações**, rastreabilidade factual através do identificador documental (`review_id`) e conformidade com contratos de dados rigorosos (Pydantic).
 
 ---
+
 
 ## 2. Arquitetura da Solução
 
@@ -28,45 +27,49 @@ O pipeline de engenharia foi desenhado segundo os padrões de ponta (SOTA) para 
                                             │
                     ┌───────────────────────┴───────────────────────┐
                     ▼                                               ▼
-         [ Recuperação Léxica ]                         [ Recuperação Densa ]
-            BM25 Retriever                             Embeddings MiniLM-L6-v2
+         [ Recuperação Léxica ]                          [ Recuperação Densa ]
+            BM25 Retriever                               Embeddings MiniLM-L6-v2
           (Palavras-chave e termos)                    (Semântica Vetorial ChromaDB)
                     │                                               │
                     └───────────────────────┬───────────────────────┘
                                             ▼
-                           [ Fusão Híbrida: RRF ]
-                       (Reciprocal Rank Fusion k=60)
+                               [ Fusão Híbrida: RRF ]
+                            (Reciprocal Rank Fusion k=60)
                                             │
                                             ▼
-                           [ Reordenação por Cross-Encoder ]
-                               FlashRank (ms-marco-MiniLM)
+                               [ Reordenação por Cross-Encoder ]
+                                   FlashRank (ms-marco-MiniLM)
                                             │
                                             ▼
-                         [ Injeção de Contexto Estruturado ]
-                         Top-N Evidências com Metadados Reais
+                             [ Injeção de Contexto Estruturado ]
+                             Top-N Evidências com Metadados Reais
                                             │
                                             ▼
-                          [ Modelo Generativo Estruturado ]
-                        Gemini 3.6 Flash / Fallback Resiliente
-                                (Validação Pydantic)
+                              [ Modelo Generativo Estruturado ]
+                            Gemini 3.6 Flash / Fallback Resiliente
+                                    (Validação Pydantic)
                                             │
                                             ▼
-                   [ Dashboard Streamlit ] & [ OpenAPI / FastAPI ]
+                       [ Dashboard Streamlit ] & [ OpenAPI / FastAPI ]
 ```
+
 
 ### Componentes Chave:
 
+* **Recuperação Híbrida (BM25 + ChromaDB):** Mitiga os limites da busca vetorial pura, capturando termos exatos do e-commerce (ex.: "extraviou", "atrasou", nomes de peças) e relações semânticas densas.
+* **Fusão RRF (Reciprocal Rank Fusion):** Equilibra as classificações dos candidatos léxicos e densos de forma agnóstica à escala ($k=60$).
+* **Reordenação Neural (Cross-Encoder ms-marco-MiniLM):** Avalia os pares pergunta-documento via mecanismo de atenção conjunta, reduzindo o volume de contexto e eliminando ruídos antes do LLM.
+* **Contrato Estruturado (Pydantic):** A resposta executiva é compilada no schema `InsightResponse`, compreendendo resumo executivo, sentimento, causas-raiz, ações operacionais recomendadas e citações literais auditadas (`review_id`).
+
 
 ### Limitações e Decisões Arquiteturais Conhecidas:
+
 * **Métrica de Groundedness:** O Groundedness calculado em tempo de execução no pipeline.py atua como uma métrica de precisão (*precision*) das citações retornadas pelo LLM contra o contexto fornecido. Ele mede o quanto das afirmações feitas e IDs citados realmente existem no contexto (penalizando alucinações), e não a cobertura de todos os documentos recuperados.
 * **Calibração do Threshold (Fallback 1):** O limiar de corte do re-ranqueador (0.10) foi estabelecido via calibração baseada em dados, usando uma amostragem inicial de 15 perguntas (10 in-domain, 5 out-of-domain). Observou-se uma margem estreita (~0.058) em relação ao outlier válido mais baixo (0.1585 - "satisfação com os vendedores"). Sendo uma amostra pequena, perguntas de fraseado mais vago podem ser falsamente rejeitadas. **Recomendação:** O threshold deve ser recalibrado em produção se o time perceber aumento de falsos positivos do Fallback 1.
 * **Viés de Auto-avaliação (LLM-as-a-Judge):** No avaliador da Tríade RAG (
-ag_triad.py), a utilização do mesmo modelo/família de LLM para gerar a resposta e julgá-la embute um viés sistêmico conhecido na literatura, podendo gerar notas de Answer Relevance e Groundedness infladas.
-
+  ag_triad.py), a utilização do mesmo modelo/família de LLM para gerar a resposta e julgá-la embute um viés sistêmico conhecido na literatura, podendo gerar notas de Answer Relevance e Groundedness infladas.
 * **Tratamento de Valores Ausentes:** (Requisito Fase 4) Comentários textuais são o núcleo de um sistema RAG. Registros da base original que não possuíam texto de review (nulos, NaN ou strings vazias) foram estrategicamente descartados durante a etapa de indexação (scripts/index_data.py), pois não agregam valor à busca vetorial ou BM25.
 * **Roteador Semântico (Filtro por UF):** O desafio opcional de roteamento/filtro semântico por estado (UF) foi projetado no QueryAnalyzer, mas listado como *Trabalho Futuro*. A coluna customer_state não está unificada no atual olist_reviews_clean.parquet (necessitaria de join com olist_customers_dataset), portanto o filtro espacial está desativado no pipeline atual para garantir a estabilidade do RAG.
-
-
 * **Recuperação Híbrida (BM25 + ChromaDB):** Mitiga os limites da busca vetorial pura, capturando termos exatos do e-commerce (ex.: "estraviou", "atrasou", nomes de peças) e relações semânticas densas.
 * **Fusão RRF (Reciprocal Rank Fusion):** Equilibra as classificações dos candidatos léxicos e densos de forma agnóstica à escala.
 * **Reordenação Neural (Cross-Encoder FlashRank):** Avalia os pares pergunta-documento via mecanismo de atenção conjunto, reduzindo o volume de contexto e eliminando ruídos antes do LLM.
@@ -199,9 +202,7 @@ VECTOR_STORE_DIR="data/vector_store"
 1. **Pré-processamento e Indexação (OBRIGATÓRIO):**
    Antes de subir a aplicação, você precisa popular o banco vetorial e criar as bases do BM25:
 
-`Shell
-python scripts/index_data.py
-`
+`Shell python scripts/index_data.py `
 
 2. Iniciar a API FastAPI:
 
