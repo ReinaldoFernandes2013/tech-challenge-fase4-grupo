@@ -1,0 +1,28 @@
+{
+  "IN-DOMAIN (Olist, E-commerce, Logística)": [
+    "Por que os clientes estao reclamando de atraso em SP?",
+    "Qual o motivo da nota 1 na logistica?",
+    "Quais sao as principais criticas sobre a qualidade dos produtos?",
+    "O que dizem os clientes satisfeitos com a entrega rapida?",
+    "Ha problemas no SAC e no atendimento ao cliente?",
+    "Reclamacoes sobre produtos falsificados ou quebrados.",
+    "Elogios sobre a facilidade de compra.",
+    "A transportadora esta entregando no prazo?",
+    "Problemas com reembolso e cancelamento de pedidos.",
+    "Qual o nivel de satisfacao com os vendedores da Olist?"
+  ],
+  "EDGE-CASES (Fronteira, quase fora do tema)": [
+    "Como calcular o frete dos Correios para a minha cidade?",
+    "Qual celular comprar com bom custo-beneficio neste ano?",
+    "Qual o horario de funcionamento da agencia de entregas?",
+    "Voces vendem passagens aereas e pacotes de viagem?",
+    "Como emitir segunda via da fatura do meu cartao de credito?"
+  ],
+  "OUT-OF-DOMAIN (Ruído, Assuntos não relacionados)": [
+    "Como investir em acoes da bolsa de valores?",
+    "Qual a receita para um bolo de cenoura fofinho?",
+    "Quais sao as regras de impedimento no futebol?",
+    "Me explique a teoria da relatividade geral de Einstein.",
+    "Qual a capital da Franca e quantos habitantes tem?"
+  ]
+}
