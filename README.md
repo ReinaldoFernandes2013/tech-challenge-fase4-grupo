@@ -234,7 +234,9 @@ docker compose up --build
 * **API FastAPI:** `http://localhost:8000`
 * **Streamlit Dashboard:** `http://localhost:8501`
 
-6. Validação e Testes Automatizados
+```markdown
+## 6. Validação Experimental e Evidências
+```
 
 O projeto contém uma suíte automatizada de testes com **Pytest** que valida os contratos de dados e a integridade das rotas HTTP:
 
