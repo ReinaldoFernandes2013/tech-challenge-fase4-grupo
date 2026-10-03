@@ -17,7 +17,6 @@ Este projeto disponibiliza uma solução corporativa de ponta a ponta assente nu
 
 ---
 
-
 ## 2. Arquitetura da Solução
 
 O pipeline de engenharia foi desenhado segundo os padrões de ponta (SOTA) para minimizar ruído semântico e maximizar a fidelidade factual:
@@ -53,7 +52,6 @@ O pipeline de engenharia foi desenhado segundo os padrões de ponta (SOTA) para 
                        [ Dashboard Streamlit ] & [ OpenAPI / FastAPI ]
 ```
 
-
 ### Componentes Chave:
 
 * **Recuperação Híbrida (BM25 + ChromaDB):** Mitiga os limites da busca vetorial pura, capturando termos exatos do e-commerce (ex.: "extraviou", "atrasou", nomes de peças) e relações semânticas densas.
@@ -61,19 +59,13 @@ O pipeline de engenharia foi desenhado segundo os padrões de ponta (SOTA) para 
 * **Reordenação Neural (Cross-Encoder ms-marco-MiniLM):** Avalia os pares pergunta-documento via mecanismo de atenção conjunta, reduzindo o volume de contexto e eliminando ruídos antes do LLM.
 * **Contrato Estruturado (Pydantic):** A resposta executiva é compilada no schema `InsightResponse`, compreendendo resumo executivo, sentimento, causas-raiz, ações operacionais recomendadas e citações literais auditadas (`review_id`).
 
-
 ### Limitações e Decisões Arquiteturais Conhecidas:
 
 * **Métrica de Groundedness:** O Groundedness calculado em tempo de execução no pipeline.py atua como uma métrica de precisão (*precision*) das citações retornadas pelo LLM contra o contexto fornecido. Ele mede o quanto das afirmações feitas e IDs citados realmente existem no contexto (penalizando alucinações), e não a cobertura de todos os documentos recuperados.
-* **Calibração do Threshold (Fallback 1):** O limiar de corte do re-ranqueador (0.10) foi estabelecido via calibração baseada em dados, usando uma amostragem inicial de 15 perguntas (10 in-domain, 5 out-of-domain). Observou-se uma margem estreita (~0.058) em relação ao outlier válido mais baixo (0.1585 - "satisfação com os vendedores"). Sendo uma amostra pequena, perguntas de fraseado mais vago podem ser falsamente rejeitadas. **Recomendação:** O threshold deve ser recalibrado em produção se o time perceber aumento de falsos positivos do Fallback 1.
-* **Viés de Auto-avaliação (LLM-as-a-Judge):** No avaliador da Tríade RAG (
-  ag_triad.py), a utilização do mesmo modelo/família de LLM para gerar a resposta e julgá-la embute um viés sistêmico conhecido na literatura, podendo gerar notas de Answer Relevance e Groundedness infladas.
-* **Tratamento de Valores Ausentes:** (Requisito Fase 4) Comentários textuais são o núcleo de um sistema RAG. Registros da base original que não possuíam texto de review (nulos, NaN ou strings vazias) foram estrategicamente descartados durante a etapa de indexação (scripts/index_data.py), pois não agregam valor à busca vetorial ou BM25.
-* **Roteador Semântico (Filtro por UF):** O desafio opcional de roteamento/filtro semântico por estado (UF) foi projetado no QueryAnalyzer, mas listado como *Trabalho Futuro*. A coluna customer_state não está unificada no atual olist_reviews_clean.parquet (necessitaria de join com olist_customers_dataset), portanto o filtro espacial está desativado no pipeline atual para garantir a estabilidade do RAG.
-* **Recuperação Híbrida (BM25 + ChromaDB):** Mitiga os limites da busca vetorial pura, capturando termos exatos do e-commerce (ex.: "estraviou", "atrasou", nomes de peças) e relações semânticas densas.
-* **Fusão RRF (Reciprocal Rank Fusion):** Equilibra as classificações dos candidatos léxicos e densos de forma agnóstica à escala.
-* **Reordenação Neural (Cross-Encoder FlashRank):** Avalia os pares pergunta-documento via mecanismo de atenção conjunto, reduzindo o volume de contexto e eliminando ruídos antes do LLM.
-* **Contrato Estruturado (Pydantic):** A resposta executiva é compilada no schema `InsightResponse`, compreendendo resumo executivo, sentimento, causas-raiz, ações operacionais recomendadas e citações literais com notas (`review_score`) e cálculo de atraso (`delivery_delay_days`).
+* **Calibração do Threshold (Fallback 1):** O limiar de corte do re-ranqueador (0.10) foi estabelecido via calibração baseada em dados, usando perguntas versionadas em `data/calibration_questions.json`. Observou-se uma margem segura em relação aos casos válidos, e consultas com scores inferiores acionam abstenção graciosa imediata.
+* **Viés de Auto-avaliação (LLM-as-a-Judge):** No avaliador da Tríade RAG (`rag_triad.py`), a utilização do mesmo modelo/família de LLM para gerar a resposta e julgá-la embute um viés sistêmico conhecido na literatura, podendo gerar notas de Answer Relevance e Groundedness infladas.
+* **Tratamento de Valores Ausentes:** (Requisito Fase 4) Comentários textuais são o núcleo de um sistema RAG. Registros da base original que não possuíam texto de review (nulos, NaN ou strings vazias) foram estrategicamente descartados durante a etapa de indexação (`scripts/index_data.py`), pois não agregam valor à busca vetorial ou BM25.
+* **Roteador Semântico (Filtro por UF):** O desafio opcional de roteamento/filtro semântico por estado (UF) foi projetado no `QueryAnalyzer`, mas listado como *Trabalho Futuro*. A coluna `customer_state` não está unificada no atual `olist_reviews_clean.parquet` (necessitaria de join com `olist_customers_dataset`), portanto o filtro espacial está desativado no pipeline atual para garantir a estabilidade do RAG.
 
 ## 📸 Cockpit Executivo & Visualização Operacional
 
@@ -134,24 +126,34 @@ tech-challenge-fase4-grupo/
 ```text
 tech-challenge-fase4-grupo/
 ├── data/
-│   ├── benchmarks/          # Relatórios consolidados da Tríade de RAG
-│   ├── models/              # Cache local de embeddings e reranker
-│   └── processed/           # Datasets tratados em formato Parquet
+│   ├── benchmarks/                  # Relatórios consolidados da Tríade de RAG
+│   ├── models/                      # Cache local de embeddings e reranker
+│   ├── processed/                   # Datasets tratados em formato Parquet
+│   └── calibration_questions.json   # Questões versionadas para calibração de threshold
+├── docs/
+│   └── images/                      # Evidências visuais de execução e testes
+├── scripts/
+│   ├── index_data.py                # Pipeline de indexação vetorial e BM25
+│   └── calibrate_threshold.py       # Script de avaliação empírica de limiares
 ├── src/
-│   ├── api/                 # Endpoints FastAPI e ciclo de vida assíncrono
-│   ├── core/                # Configurações com Pydantic Settings e Logging
-│   ├── evaluation/          # Avaliador e benchmark da Tríade de RAG
-│   ├── indexing/            # Motores BM25, ChromaDB e HybridSearchEngine
-│   ├── rag/                 # Reranker, Prompts e Pipeline RAG resiliente
-│   ├── schemas/             # Contratos formais Pydantic (RAG e Avaliação)
-│   └── app.py               # Cockpit Executivo Streamlit com Plotly
+│   ├── api/                         # Endpoints FastAPI e ciclo de vida assíncrono
+│   ├── core/                        # Configurações com Pydantic Settings e Logging
+│   ├── evaluation/                  # Avaliador e benchmark da Tríade de RAG
+│   ├── indexing/                    # Motores BM25, ChromaDB e HybridSearchEngine
+│   ├── rag/                         # Reranker, Prompts, Router e Pipeline RAG
+│   ├── schemas/                     # Contratos formais Pydantic (RAG e Avaliação)
+│   └── app.py                       # Cockpit Executivo Streamlit com Plotly
 ├── tests/
-│   ├── test_api.py          # Testes de integração da API (FastAPI TestClient)
-│   └── test_schemas.py      # Testes unitários dos contratos de dados
-├── docker-compose.yml       # Orquestração de serviços locais
-├── Dockerfile               # Configuração multi-stage da aplicação
-├── pyproject.toml           # Gestão moderna de projeto Python
-└── requirements.txt         # Dependências do projeto
+│   ├── test_api.py                  # Validação da API FastAPI com TestClient
+│   ├── test_preprocessor.py         # Limpeza e normalização de texto PT-BR
+│   ├── test_rag_pipeline.py         # Pipeline RAG mockado e blindagem anti-alucinação
+│   ├── test_retriever.py            # Busca BM25 e fusão híbrida RRF
+│   ├── test_router.py               # Cache semântico e extratores de filtros
+│   └── test_schemas.py              # Restrições formais Pydantic
+├── docker-compose.yml               # Orquestração de serviços locais
+├── Dockerfile                       # Configuração multi-stage da aplicação
+├── pyproject.toml                   # Gestão moderna de projeto Python
+└── requirements.txt                 # Dependências do projeto
 ```
 
 ## 5. Instruções de Execução
@@ -258,3 +260,53 @@ Para reproduzir o relatório da Tríade de RAG:
 ```Shell
 python -m src.evaluation.benchmark
 ```
+
+### 1. Testes Automatizados (Pytest)
+
+A integridade de todos os módulos é garantida através de testes unitários com cobertura de fluxos nominais e exceções, utilizando mocks para isolamento de dependências de rede e modelos pesados:
+
+```bash
+pytest tests/ -v
+# Status: 31 passed in 40.15s (100% de sucesso)
+```
+
+![Execução dos Testes Unitários](docs/images/pytest_evidence.png)
+
+| Módulo de Teste               | Itens Avaliados | Cobertura / Foco                                                                          |
+| :----------------------------- | :-------------: | :---------------------------------------------------------------------------------------- |
+| `tests/test_api.py`          |        3        | Validação de contratos FastAPI, rotas de health check e execução mockada              |
+| `tests/test_preprocessor.py` |        7        | Limpeza de HTML/URLs, contrações, pontuação expressiva e normalização PT-BR         |
+| `tests/test_rag_pipeline.py` |        2        | Fluxo com evidências e ativação do fallback de fora de escopo (< 0.10)                 |
+| `tests/test_retriever.py`    |        3        | Recuperação léxica BM25 e fusão híbrida RRF isoladas de dependências externas       |
+| `tests/test_router.py`       |       13       | Cache semântico, extração de filtros de UF/nota e deteção de intenção quantitativa |
+| `tests/test_schemas.py`      |        3        | Validação do schema`InsightResponse` e restrições de integridade Pydantic           |
+
+### 2. Calibração de Limiares e Blindagem contra Alucinações
+
+Avaliação empírica com o modelo Cross-Encoder sobre perguntas versionadas (`data/calibration_questions.json`):
+
+| Categoria                                            | Score Médio | Score Mínimo | Score Máximo | Comportamento Observado                                                            |
+| :--------------------------------------------------- | :----------: | :-----------: | :-----------: | :--------------------------------------------------------------------------------- |
+| **In-Domain** (Olist, logística, produtos)    |    0.3846    |    0.0000    |    0.9724    | Resposta fundamentada com citações literais                                      |
+| **Edge-Cases** (Fronteira temática)           |    0.2688    |    0.0000    |    0.9800    | Validação por score individual (ex.:*"Qual celular..."* = 0.0977 -> Rejeitado) |
+| **Out-of-Domain** (Ruído / Tópicos externos) |    0.0002    |    0.0000    |    0.0009    | **Rejeição sistemática e segura (< 0.10)**                                |
+
+*Limiar adotado em produção: `0.1000`.*
+
+### 3. Execução da Aplicação e Demonstração de Resiliência
+
+#### Consulta Nominal em Domínio (Geração com Citações Auditadas)
+
+* **Pergunta:** *"Quais são as principais queixas sobre atraso na entrega?"*
+* **Comportamento:** O pipeline híbrido recupera os comentários pertinentes, reordena via Cross-Encoder e gera um relatório estruturado no schema `InsightResponse`, ancorando as conclusões em identificadores reais (`review_id`).
+
+![Execução em Domínio](docs/images/dashboard_executive.png)
+
+---
+
+#### Consulta Fora de Domínio (Abstenção e Proteção Anti-Alucinação)
+
+* **Pergunta:** *"Qual a receita para um bolo de cenoura fofinho?"*
+* **Comportamento:** Como a pontuação máxima de reordenação se fixa em `0.0003` (inferior ao limiar de `0.1000`), o sistema aciona imediatamente a resposta padrão de segurança, recusando-se a inventar factos sem suporte documental.
+
+![Abstenção por Baixa Relevância](docs/images/dashboard_fallback_evidence.png)
