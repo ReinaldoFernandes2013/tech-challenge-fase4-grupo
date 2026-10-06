@@ -212,6 +212,20 @@ VECTOR_STORE_DIR="data/vector_store"
 uvicorn src.api.main:app --reload --port 8000
 ```
 
+
+
+### Acesso à Documentação Interativa
+
+Com o servidor em execução, aceda no navegador:
+
+* **Swagger UI:** [http://localhost:8000/docs](http://localhost:8000/docs)
+* **ReDoc:** [http://localhost:8000/redoc](http://localhost:8000/redoc)
+
+### Endpoints Disponíveis
+
+* `GET /health`: Diagnóstico de saúde do serviço, modelos alocados e status dos componentes de busca híbrida.
+* `POST /api/v1/query`: Execução do pipeline analítico RAG, incluindo análise de intenção, recuperação densa/esparsa, reordenação neural, síntese contextual com LLM e telemetria de latência.
+
 	Documentação Swagger interativa: `http://localhost:8000/docs`
 
 1. **Iniciar o Dashboard Executivo Streamlit:**
@@ -263,6 +277,18 @@ Para reproduzir o relatório da Tríade de RAG:
 python -m src.evaluation.benchmark
 ```
 
+
+
+## Documentação Interativa da API (Swagger / OpenAPI)
+
+A plataforma disponibiliza uma API RESTful de alta performance construída sobre FastAPI, contendo documentação interativa OpenAPI/Swagger para validação de endpoints e auditoria de respostas do pipeline RAG.
+
+### Como iniciar a API localmente
+
+```bash
+uvicorn src.api.main:app --reload --port 8000
+```
+
 ### 1. Testes Automatizados (Pytest)
 
 A integridade de todos os módulos é garantida através de testes unitários com cobertura de fluxos nominais e exceções, utilizando mocks para isolamento de dependências de rede e modelos pesados:
@@ -312,3 +338,19 @@ Avaliação empírica com o modelo Cross-Encoder sobre perguntas versionadas (`d
 * **Comportamento:** Como a pontuação máxima de reordenação se fixa em `0.0003` (inferior ao limiar de `0.1000`), o sistema aciona imediatamente a resposta padrão de segurança, recusando-se a inventar factos sem suporte documental.
 
 ![Abstenção por Baixa Relevância](docs/images/dashboard_fallback_evidence.png)
+
+
+
+## Limitações Conhecidas e Trabalhos Futuros
+
+### Limitações Técnicas do Sistema
+
+- **Dependência de Serviços de Inferência Externa:** A geração contextual avançada depende da disponibilidade, latência e cotas de requisição da API de LLM (Google Gemini / OpenAI). Em cenários de indisponibilidade de rede ou rate limiting, o pipeline aciona de forma transparente o fallback determinístico calibrado.
+- **Persistência do ChromaDB Local:** O índice vetorial denso opera atualmente com persistência em disco local, exigindo configuração de volumes persistentes em eventuais ambientes conteinerizados ou de nuvem distribuída.
+- **Sensibilidade de Vocabulário Específico:** Embora a busca híbrida (BM25 + ChromaDB) capture a maior parte dos termos, abreviações extremas ou gírias regionais fora do vocabulário comum de e-commerce brasileiro podem apresentar representações subótimas de embedding.
+
+### Propostas e Trabalhos Futuros
+
+- **Fine-Tuning de Embeddings de Domínio:** Ajuste fino supervisionado de modelos de representação densa utilizando o próprio vocabulário de SAC e logística do comércio eletrônico brasileiro.
+- **Roteamento Dinâmico Multi-LLM:** Implementação de failover automático para modelos alternativos (ex.: fallback transparente para modelo local open-source ou provedor secundário) antes de acionar a síntese determinística.
+- **Pipeline de Feedback Loop Contínuo:** Interface de curadoria humana ativa para validação de respostas e enriquecimento contínuo da base vetorial.
