@@ -79,39 +79,87 @@ class OlistRAGPipeline:
     def _generate_fallback_insight(
         self, query: str, ranked_evidences: List[Dict[str, Any]]
     ) -> InsightResponse:
-        """Gera síntese estruturada determinística auditada sobre as evidências recuperadas."""
+        """Gera síntese estruturada determinística auditada e adaptada ao sentimento real das evidências."""
         citations_list: List[CitationEvidence] = []
         causes: List[str] = []
 
         top_docs = ranked_evidences[: min(4, len(ranked_evidences))]
+        scores = []
+        delays = []
+
         for doc in top_docs:
             clean_text = doc["text"].replace("\n", " ").strip()
             excerpt = clean_text[:180] + ("..." if len(clean_text) > 180 else "")
+            r_score = int(doc.get("review_score", 3))
+            d_delay = float(doc.get("delivery_delay_days", 0.0))
+
+            scores.append(r_score)
+            delays.append(d_delay)
 
             citations_list.append(
                 CitationEvidence(
                     review_id=doc["review_id"],
-                    review_score=int(doc.get("review_score", 1)),
-                    delivery_delay_days=float(doc.get("delivery_delay_days", 0.0)),
+                    review_score=r_score,
+                    delivery_delay_days=d_delay,
                     excerpt=excerpt,
                 )
             )
-            causes.append(f"Gargalo registrado no pedido {doc['review_id'][:8]}: {clean_text[:65]}...")
+
+        avg_score = (sum(scores) / len(scores)) if scores else 3.0
+        avg_delay = (sum(delays) / len(delays)) if delays else 0.0
+
+        # Determina dinamicamente o sentimento e o diagnóstico com base nas notas recuperadas
+        if avg_score >= 4.0:
+            sentiment_trend = "Positivo"
+            for doc in top_docs:
+                clean_t = doc["text"].replace("\n", " ").strip()
+                causes.append(f"Ponto positivo destacado no pedido {doc['review_id'][:8]}: {clean_t[:65]}...")
+            executive_summary = (
+                f"Com base na recuperação de {len(ranked_evidences)} avaliações analisadas em modo de resiliência, "
+                f"o sentimento predominante é amplamente favorável (média de {avg_score:.1f} estrelas). "
+                f"Os clientes destacam eficiência no cumprimento de prazos e satisfação geral com a entrega."
+            )
+            recommendations = [
+                "Mapear e replicar as práticas das transportadoras e sellers com melhor avaliação.",
+                "Manter o padrão de expedição rápida nas rotas evidenciadas.",
+                "Reforçar programas de fidelização para clientes satisfeitos."
+            ]
+        elif avg_score <= 2.5:
+            sentiment_trend = "Crítico/Negativo"
+            for doc in top_docs:
+                clean_t = doc["text"].replace("\n", " ").strip()
+                causes.append(f"Gargalo registrado no pedido {doc['review_id'][:8]}: {clean_t[:65]}...")
+            executive_summary = (
+                f"Com base na recuperação de {len(ranked_evidences)} avaliações analisadas em modo de resiliência, "
+                f"os apontamentos concentram-se em atritos operacionais (média de {avg_score:.1f} estrelas e "
+                f"atraso médio de {avg_delay:.1f} dias), demandando intervenção em rotas críticas."
+            )
+            recommendations = [
+                "Revisar o SLA de expedição junto aos lojistas e transportadoras com maior índice de atraso.",
+                "Implementar canal de contingência no SAC com rastreamento ativo em tempo real.",
+                "Auditar conformidade e integridade física de itens despachados antes da coleta."
+            ]
+        else:
+            sentiment_trend = "Neutro/Misto"
+            for doc in top_docs:
+                clean_t = doc["text"].replace("\n", " ").strip()
+                causes.append(f"Evidência identificada no pedido {doc['review_id'][:8]}: {clean_t[:65]}...")
+            executive_summary = (
+                f"Com base na recuperação de {len(ranked_evidences)} avaliações em modo de resiliência, "
+                f"observa-se uma distribuição mista de experiências (média de {avg_score:.1f} estrelas), "
+                f"sem convergência unânime para falha crítica ou excelência operacional."
+            )
+            recommendations = [
+                "Segmentar as avaliações por região e categoria para identificar variações pontuais de SLA.",
+                "Monitorar a evolução do tempo médio de entrega nas próximas janelas operacionais."
+            ]
 
         return InsightResponse(
             query=query,
-            executive_summary=(
-                f"Com base na recuperação de {len(ranked_evidences)} avaliações via busca híbrida (BM25 + vetorial) "
-                f"e reordenação neural (Cross-Encoder), os apontamentos dos clientes concentram-se em desacordo no "
-                f"prazo logístico, falhas no processo de transporte e necessidade de suporte pós-venda ágil."
-            ),
-            sentiment_trend="Crítico/Negativo",
-            key_root_causes=causes if causes else ["Atraso logístico recorrente", "Divergência de mercadoria"],
-            actionable_recommendations=[
-                "Revisar o SLA de expedição junto aos lojistas e transportadoras com maior índice de atraso.",
-                "Implementar canal de contingência no SAC com rastreamento ativo em tempo real.",
-                "Auditar conformidade e integridade física de itens despachados antes da coleta.",
-            ],
+            executive_summary=executive_summary,
+            sentiment_trend=sentiment_trend,
+            key_root_causes=causes if causes else ["Variações operacionais em análise."],
+            actionable_recommendations=recommendations,
             citations=citations_list,
             groundedness_score=1.0,
         )
@@ -237,4 +285,3 @@ class OlistRAGPipeline:
             })
 
         return response
-
