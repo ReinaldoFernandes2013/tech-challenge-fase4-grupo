@@ -1,7 +1,13 @@
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 import pandas as pd
-from langchain_community.vectorstores import Chroma
+
+# Import resiliente para eliminar o DeprecationWarning
+try:
+    from langchain_chroma import Chroma
+except ImportError:
+    from langchain_community.vectorstores import Chroma
+
 from langchain_core.documents import Document
 from src.core.config import settings
 from src.core.logging import logger
@@ -36,6 +42,7 @@ class OlistVectorStore:
                 "review_score": int(row.get("review_score", 0)),
                 "delivery_delay_days": float(row.get("delivery_delay_days")) if pd.notnull(row.get("delivery_delay_days")) else 0.0,
                 "is_delayed": bool(row.get("is_delayed")) if pd.notnull(row.get("is_delayed")) else False,
+                "full_comment": str(row.get("full_comment", row.get("clean_comment", ""))),
             }
             # O texto a ser vetorizado é o comentário limpo, preservando o original nos metadados
             doc = Document(
@@ -63,16 +70,16 @@ class OlistVectorStore:
 
         results = []
         for doc, score in docs:
+            # Recupera o texto original para manter consistência com o BM25
+            display_text = doc.metadata.get("full_comment", doc.page_content)
             results.append({
                 "review_id": doc.metadata.get("review_id", ""),
                 "order_id": doc.metadata.get("order_id", ""),
                 "review_score": doc.metadata.get("review_score", 0),
-                "text": doc.page_content,
+                "text": display_text,
                 "delivery_delay_days": doc.metadata.get("delivery_delay_days"),
                 "is_delayed": doc.metadata.get("is_delayed"),
                 "score_vector": float(score),
                 "retriever_type": "vector",
             })
         return results
-
-

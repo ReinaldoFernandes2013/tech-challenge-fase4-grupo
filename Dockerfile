@@ -17,9 +17,10 @@ COPY requirements.txt pyproject.toml /app/
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
-# Copia código-fonte, dados e testes
+# Copia código-fonte, dados, scripts de suporte e testes
 COPY src/ /app/src/
 COPY data/ /app/data/
+COPY scripts/ /app/scripts/
 COPY tests/ /app/tests/
 
 EXPOSE 8000 8501

@@ -1,6 +1,9 @@
+from pathlib import Path
 from typing import Any, Dict, List
 from flashrank import Ranker, RerankRequest
 from src.core.logging import logger
+
+CACHE_DIR = str(Path("./data/models").resolve())
 
 
 class CrossEncoderReranker:
@@ -8,7 +11,7 @@ class CrossEncoderReranker:
 
     def __init__(self, model_name: str = "ms-marco-MiniLM-L-12-v2"):
         logger.info(f"A inicializar o modelo de re-ranking: {model_name}")
-        self.ranker = Ranker(model_name=model_name, cache_dir="./data/models")
+        self.ranker = Ranker(model_name=model_name, cache_dir=CACHE_DIR)
 
     def rerank(
         self,
@@ -20,11 +23,13 @@ class CrossEncoderReranker:
         if not candidates:
             return []
 
-        # Formato esperado pelo FlashRank
-        passages = [
-            {"id": str(i), "text": doc["text"], "meta": doc}
-            for i, doc in enumerate(candidates)
-        ]
+        # Formato esperado pelo FlashRank com garantia de string não vazia
+        passages = []
+        for i, doc in enumerate(candidates):
+            text_content = str(doc.get("text") or "").strip()
+            if not text_content:
+                text_content = "Comentário sem texto explícito."
+            passages.append({"id": str(i), "text": text_content, "meta": doc})
 
         rerank_request = RerankRequest(query=query, passages=passages)
         ranked_passages = self.ranker.rerank(rerank_request)

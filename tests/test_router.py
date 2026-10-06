@@ -1,10 +1,10 @@
 """
 Testes unitários rigorosos para o Router, Semantic Cache e Query Analyzer.
 """
-import pytest
 import numpy as np
 import pandas as pd
-from src.rag.router import SemanticCache, QueryAnalyzer
+import pytest
+from src.rag.router import QueryAnalyzer, SemanticCache
 
 
 @pytest.fixture
@@ -49,9 +49,10 @@ def test_semantic_cache_zero_vector():
     ("Relatos péssimos sobre pedidos de MG", "MG", 1),
     ("Produtos excelentes com 5 estrelas em Curitiba", None, 5),
     ("Atrasos gerais no pós-venda", None, None),
+    ("PÉSSIMO ATENDIMENTO EM SP", "SP", 1),
 ])
 def test_query_analyzer_extract_filters(query, expected_state, expected_score):
-    """Testa a extração precisa de metadados geográficos e de sentimento."""
+    """Testa a extração de metadados geográficos e de sentimento com case-insensitivity."""
     filters = QueryAnalyzer.extract_filters(query)
     assert filters.get("customer_state") == expected_state
     assert filters.get("review_score") == expected_score
