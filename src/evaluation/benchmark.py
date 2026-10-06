@@ -1,12 +1,13 @@
 import json
-import time
 from pathlib import Path
+import time
 import pandas as pd
 from rich.console import Console
 from rich.table import Table
 
 from src.core.config import settings
 from src.core.logging import logger
+from src.evaluation.metrics import calculate_triad_statistics
 from src.evaluation.rag_triad import RAGTriadEvaluator
 from src.rag.pipeline import OlistRAGPipeline
 from src.schemas.eval_schema import BenchmarkReport, SingleEvaluationResult
@@ -22,15 +23,18 @@ TEST_SUITE = [
 
 
 def run_benchmark():
-    parquet_path = settings.DATA_PROCESSED_DIR / "olist_reviews_clean.parquet"
+    # 1. Carrega estritamente a mesma base que foi indexada no ChromaDB
+    parquet_path = settings.DATA_PROCESSED_DIR / "olist_indexed_sample.parquet"
     if not parquet_path.exists():
-        raise FileNotFoundError(f"Parquet ausente: {parquet_path}")
+        parquet_path = settings.DATA_PROCESSED_DIR / "olist_reviews_clean.parquet"
 
-    logger.info("Carregando amostra para benchmark formal...")
-    df_all = pd.read_parquet(parquet_path)
-    df_sample = df_all.sample(n=min(300, len(df_all)), random_state=42)
+    if not parquet_path.exists():
+        raise FileNotFoundError(f"Arquivo parquet para benchmark ausente: {parquet_path}")
 
-    pipeline = OlistRAGPipeline(df_sample)
+    logger.info(f"Carregando base de benchmark formal a partir de: {parquet_path}")
+    df_benchmark = pd.read_parquet(parquet_path)
+
+    pipeline = OlistRAGPipeline(df_benchmark)
     evaluator = RAGTriadEvaluator()
 
     results = []
@@ -41,15 +45,21 @@ def run_benchmark():
         console.print(f"[yellow]({idx}/{len(TEST_SUITE)}) Avaliando pergunta:[/yellow] '{query}'")
 
         t0 = time.perf_counter()
-        # 1. Executa a inferência
         insight = pipeline.generate_insight(query=query, retrieval_k=15, rerank_n=5)
         elapsed = round(time.perf_counter() - t0, 3)
 
-        # 2. Formata contexto e resposta para o avaliador
-        context_str = "\n".join([f"[{c.review_id}] {c.excerpt}" for c in insight.citations])
-        answer_str = f"Resumo: {insight.executive_summary}\nCausas: {', '.join(insight.key_root_causes)}\nAções: {', '.join(insight.actionable_recommendations)}"
+        # Formatação do contexto com proteção para abstenção formal
+        if insight.citations:
+            context_str = "\n".join([f"[{c.review_id}] {c.excerpt}" for c in insight.citations])
+        else:
+            context_str = "Nenhum documento recuperado acima do limiar semântico (Abstenção acionada)."
 
-        # 3. Avalia com LLM-as-a-Judge
+        answer_str = (
+            f"Resumo: {insight.executive_summary}\n"
+            f"Causas: {', '.join(insight.key_root_causes)}\n"
+            f"Ações: {', '.join(insight.actionable_recommendations)}"
+        )
+
         triad_metric = evaluator.evaluate(query=query, context=context_str, answer=answer_str)
 
         results.append(
@@ -61,11 +71,16 @@ def run_benchmark():
             )
         )
 
-    # 4. Agregação dos Resultados
-    mean_latency = round(sum(r.latency_seconds for r in results) / len(results), 3)
-    mean_context = round(sum(r.triad.context_relevance for r in results) / len(results), 3)
-    mean_groundedness = round(sum(r.triad.groundedness for r in results) / len(results), 3)
-    mean_answer = round(sum(r.triad.answer_relevance for r in results) / len(results), 3)
+    # Estatísticas consolidadas
+    latencies = [r.latency_seconds for r in results]
+    contexts = [r.triad.context_relevance for r in results]
+    groundedness_scores = [r.triad.groundedness for r in results]
+    answers = [r.triad.answer_relevance for r in results]
+
+    mean_latency = round(float(pd.Series(latencies).mean()), 3)
+    mean_context = calculate_triad_statistics(contexts)["mean"]
+    mean_groundedness = calculate_triad_statistics(groundedness_scores)["mean"]
+    mean_answer = calculate_triad_statistics(answers)["mean"]
 
     report = BenchmarkReport(
         total_evaluations=len(results),
@@ -76,7 +91,7 @@ def run_benchmark():
         results=results,
     )
 
-    # 5. Apresentação em Tabela Formatada no Terminal
+    # Apresentação no Terminal
     table = Table(title="📊 Relatório de Auditoria: Tríade de RAG (Olist)", show_header=True, header_style="bold magenta")
     table.add_column("Query Investigada", style="dim", width=40)
     table.add_column("Latência", justify="right")
@@ -103,14 +118,14 @@ def run_benchmark():
     summary_table.add_column("Status", justify="center")
 
     summary_table.add_row("Context Relevance", f"{mean_context * 100:.1f}%", ">= 75.0%", "✅ Aprovado" if mean_context >= 0.75 else "⚠️ Ajustar")
-    summary_table.add_row("Groundedness (Zero Alucinação)", f"{mean_groundedness * 100:.1f}%", ">= 90.0%", "✅ Aprovado" if mean_groundedness >= 0.90 else "⚠️ Ajustar")
+    summary_table.add_row("Groundedness (Zero Alucinação)", f"{mean_groundedness * 100:.1f}%", ">= 90.0%", "✅ Aprovado" if mean_groundedness >= 0.90 else "⚠️️ Ajustar")
     summary_table.add_row("Answer Relevance", f"{mean_answer * 100:.1f}%", ">= 80.0%", "✅ Aprovado" if mean_answer >= 0.80 else "⚠️ Ajustar")
     summary_table.add_row("Tempo Médio de Inferência", f"{mean_latency}s", "< 30.0s", "✅ Aprovado" if mean_latency < 30.0 else "⚠️ Alerta")
 
     console.print("\n")
     console.print(summary_table)
 
-    # 6. Salva relatório em disco para o relatório acadêmico
+    # Persistência do Relatório
     output_dir = Path("data/benchmarks")
     output_dir.mkdir(parents=True, exist_ok=True)
     report_file = output_dir / "rag_triad_report.json"

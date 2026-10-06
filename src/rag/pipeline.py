@@ -2,6 +2,7 @@ import os
 import time
 from typing import Any, Dict, List, Optional
 from dotenv import load_dotenv
+import numpy as np
 import pandas as pd
 from langchain_core.language_models.chat_models import BaseChatModel
 
@@ -10,7 +11,7 @@ from src.core.logging import logger
 from src.indexing.hybrid_indexer import HybridSearchEngine
 from src.rag.prompts import get_rag_prompt
 from src.rag.reranker import CrossEncoderReranker
-from src.rag.router import SemanticCache, QueryAnalyzer
+from src.rag.router import QueryAnalyzer, SemanticCache
 from src.schemas.rag_schema import CitationEvidence, InsightResponse, LLMOutputSchema
 
 load_dotenv(override=True)
@@ -18,29 +19,31 @@ load_dotenv(override=True)
 
 def get_chat_model(model_name: Optional[str] = None) -> BaseChatModel:
     """Instancia o LLM configurado (OpenAI ou Google Gemini)."""
-    openai_key = os.getenv("OPENAI_API_KEY")
+    openai_key = os.getenv("OPENAI_API_KEY") or settings.OPENAI_API_KEY
     if openai_key and openai_key.startswith("sk-"):
         logger.info(f"A inicializar LLM OpenAI: {settings.LLM_MODEL}")
         from langchain_openai import ChatOpenAI
+
         return ChatOpenAI(
             model=settings.LLM_MODEL,
             temperature=settings.TEMPERATURE,
             api_key=openai_key,
         )
 
-    gemini_key = os.getenv("GOOGLE_API_KEY")
+    gemini_key = os.getenv("GOOGLE_API_KEY") or settings.GOOGLE_API_KEY
     if gemini_key and gemini_key.strip():
-        # Usa o modelo atualizado gemini-3.6-flash exigido pela Google AI API
-        chosen_model = model_name or "gemini-3.6-flash"
+        chosen_model = model_name or settings.LLM_MODEL or "gemini-1.5-flash"
         logger.info(f"A inicializar LLM Google Gemini ({chosen_model})...")
         from langchain_google_genai import ChatGoogleGenerativeAI
+
         return ChatGoogleGenerativeAI(
             model=chosen_model,
+            temperature=settings.TEMPERATURE,
             max_retries=3,
             google_api_key=gemini_key.strip(),
         )
 
-    raise ValueError("Nenhuma chave de LLM válida encontrada no arquivo .env.")
+    raise ValueError("Nenhuma chave de LLM válida (OPENAI_API_KEY ou GOOGLE_API_KEY) encontrada.")
 
 
 class OlistRAGPipeline:
@@ -53,15 +56,18 @@ class OlistRAGPipeline:
         self.prompt = get_rag_prompt()
         self.cache = SemanticCache(threshold=0.90)
 
-    def _embed_query_vector(self, query: str):
-        """Gera embedding da consulta reutilizando o modelo do motor híbrido."""
-        if hasattr(self.hybrid_engine, "embeddings"):
-            emb = self.hybrid_engine.embeddings
-            if hasattr(emb, "embed_query"):
-                return emb.embed_query(query)
-            if hasattr(emb, "encode"):
-                return emb.encode(query)
-        import numpy as np
+    def _embed_query_vector(self, query: str) -> np.ndarray:
+        """Gera embedding da consulta utilizando a função configurada na vector store."""
+        try:
+            embedding_fn = self.hybrid_engine.vector_store.embedding_fn
+            if hasattr(embedding_fn, "embed_query"):
+                vec = embedding_fn.embed_query(query)
+                return np.asarray(vec, dtype=np.float32)
+            if hasattr(embedding_fn, "encode"):
+                vec = embedding_fn.encode(query)
+                return np.asarray(vec, dtype=np.float32)
+        except Exception as err:
+            logger.warning(f"Falha ao gerar embedding para cache semântico: {err}")
         return np.zeros(384, dtype=np.float32)
 
     def _format_context(self, evidences: List[Dict[str, Any]]) -> str:
@@ -108,7 +114,6 @@ class OlistRAGPipeline:
         avg_score = (sum(scores) / len(scores)) if scores else 3.0
         avg_delay = (sum(delays) / len(delays)) if delays else 0.0
 
-        # Determina dinamicamente o sentimento e o diagnóstico com base nas notas recuperadas
         if avg_score >= 4.0:
             sentiment_trend = "Positivo"
             for doc in top_docs:
@@ -122,7 +127,7 @@ class OlistRAGPipeline:
             recommendations = [
                 "Mapear e replicar as práticas das transportadoras e sellers com melhor avaliação.",
                 "Manter o padrão de expedição rápida nas rotas evidenciadas.",
-                "Reforçar programas de fidelização para clientes satisfeitos."
+                "Reforçar programas de fidelização para clientes satisfeitos.",
             ]
         elif avg_score <= 2.5:
             sentiment_trend = "Crítico/Negativo"
@@ -137,7 +142,7 @@ class OlistRAGPipeline:
             recommendations = [
                 "Revisar o SLA de expedição junto aos lojistas e transportadoras com maior índice de atraso.",
                 "Implementar canal de contingência no SAC com rastreamento ativo em tempo real.",
-                "Auditar conformidade e integridade física de itens despachados antes da coleta."
+                "Auditar conformidade e integridade física de itens despachados antes da coleta.",
             ]
         else:
             sentiment_trend = "Neutro/Misto"
@@ -151,7 +156,7 @@ class OlistRAGPipeline:
             )
             recommendations = [
                 "Segmentar as avaliações por região e categoria para identificar variações pontuais de SLA.",
-                "Monitorar a evolução do tempo médio de entrega nas próximas janelas operacionais."
+                "Monitorar a evolução do tempo médio de entrega nas próximas janelas operacionais.",
             ]
 
         return InsightResponse(
@@ -199,10 +204,12 @@ class OlistRAGPipeline:
         ranked_evidences = self.reranker.rerank(query, candidates, top_n=rerank_n)
         telemetry["neural_rerank_ms"] = round((time.perf_counter() - t2) * 1000, 2)
 
-        # 6. Fallback 1: Insufficient Evidence
-        max_score = max([doc.get('rerank_score', 0.0) for doc in ranked_evidences]) if ranked_evidences else 0.0
-        if not ranked_evidences or max_score < 0.10:
-            logger.warning(f"Evidências insuficientes (max_score={max_score:.4f}). Ativando Fallback 1...")
+        # 6. Abstenção Formal por Evidência Insuficiente (Abaixo do Limiar Calibrado)
+        max_score = max([doc.get("rerank_score", 0.0) for doc in ranked_evidences]) if ranked_evidences else 0.0
+        threshold = getattr(settings, "ABSTENTION_THRESHOLD", 0.10)
+
+        if not ranked_evidences or max_score < threshold:
+            logger.warning(f"Evidências insuficientes (max_score={max_score:.4f} < {threshold:.4f}). Ativando Abstenção Formal...")
             response = InsightResponse(
                 query=query,
                 executive_summary="Não encontramos evidências suficientes no banco de avaliações para responder a esta pergunta com o nível de confiança exigido.",
@@ -210,7 +217,7 @@ class OlistRAGPipeline:
                 key_root_causes=["Informação não disponível no dataset analisado."],
                 actionable_recommendations=["Tente reformular a pergunta ou remover filtros excessivos."],
                 citations=[],
-                groundedness_score=0.0
+                groundedness_score=0.0,
             )
             telemetry["llm_generation_ms"] = 0.0
             telemetry["source"] = "Fallback_InsufficientEvidence"
@@ -231,27 +238,27 @@ class OlistRAGPipeline:
                 "context": context_str,
                 "query": query,
             })
-            
+
             citations_list = []
             valid_ids = 0
             evidences_map = {doc["review_id"]: doc for doc in ranked_evidences}
-            
+
             for rid in llm_response.cited_review_ids:
                 if rid in evidences_map:
                     doc = evidences_map[rid]
                     clean_text = doc["text"].replace("\n", " ").strip()
                     excerpt = clean_text[:180] + ("..." if len(clean_text) > 180 else "")
-                    
+
                     citations_list.append(CitationEvidence(
                         review_id=rid,
                         review_score=int(doc.get("review_score", 1)),
                         delivery_delay_days=float(doc.get("delivery_delay_days", 0.0)),
-                        excerpt=excerpt
+                        excerpt=excerpt,
                     ))
                     valid_ids += 1
                 else:
                     logger.warning(f"Alucinação de ID detectada: o LLM citou '{rid}' ausente nos documentos recuperados.")
-            
+
             total_returned = len(llm_response.cited_review_ids)
             computed_groundedness = (valid_ids / total_returned) if total_returned > 0 else 0.0
 
@@ -262,26 +269,26 @@ class OlistRAGPipeline:
                 key_root_causes=llm_response.key_root_causes,
                 actionable_recommendations=llm_response.actionable_recommendations,
                 citations=citations_list,
-                groundedness_score=round(computed_groundedness, 2)
+                groundedness_score=round(computed_groundedness, 2),
             )
 
             telemetry["llm_generation_ms"] = round((time.perf_counter() - t3) * 1000, 2)
             telemetry["source"] = "LLM"
 
         except Exception as exc:
-            logger.warning(f"Exceção na chamada de LLM ({exc}). Ativando fallback determinístico...")
+            logger.warning(f"Exceção na chamada de LLM ({exc}). Ativando fallback determinístico adaptativo...")
             response = self._generate_fallback_insight(query, ranked_evidences)
             telemetry["llm_generation_ms"] = round((time.perf_counter() - t3) * 1000, 2)
             telemetry["source"] = "Fallback_LLMError"
 
         telemetry["total_pipeline_s"] = round(time.perf_counter() - start_total, 2)
 
-        # Armazenar no cache vetorial (ignorando fallbacks para nao viciar o cache)
+        # Armazenar no cache vetorial (apenas respostas com sucesso do LLM)
         if not telemetry["source"].startswith("Fallback"):
             self.cache.put(query_vec, {
                 "data": response.model_dump(),
                 "telemetry": telemetry,
-                "filters": filters
+                "filters": filters,
             })
 
         return response

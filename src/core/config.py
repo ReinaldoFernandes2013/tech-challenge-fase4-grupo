@@ -11,18 +11,22 @@ class Settings(BaseSettings):
     DATA_PROCESSED_DIR: Path = BASE_DIR / "data" / "processed"
     VECTOR_DB_DIR: Path = DATA_PROCESSED_DIR / "chroma_db"
     
-    # Configurações de Modelo
+    # Configurações de Modelos (Gemini & Embeddings)
+    GOOGLE_API_KEY: str = ""
     OPENAI_API_KEY: str = ""
-    LLM_MODEL: str = "gpt-4o-mini"
-    EMBEDDING_MODEL: str = "text-embedding-3-small"
+    LLM_MODEL: str = "gemini-1.5-flash"
+    EMBEDDING_MODEL: str = "all-MiniLM-L6-v2"
     TEMPERATURE: float = 0.0
     
-    # Parâmetros de Recuperação (RRF e Re-ranking)
+    # Parâmetros de Recuperação (Busca Híbrida & Reranker)
     COLLECTION_NAME: str = "olist_customer_reviews"
     BM25_TOP_K: int = 15
     VECTOR_TOP_K: int = 15
     RERANK_TOP_K: int = 5
     RRF_K: int = 60
+    
+    # Limiar Operacional de Abstenção Semântica (Calibrado)
+    ABSTENTION_THRESHOLD: float = 0.1000
     
     # Observabilidade (LangSmith)
     LANGCHAIN_TRACING_V2: bool = False

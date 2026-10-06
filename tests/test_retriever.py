@@ -29,12 +29,17 @@ class TestBM25Retriever:
         results = retriever.search("entrega rápida produto", top_k=2)
 
         assert len(results) > 0
-        # O primeiro documento deve ser o que fala de entrega rápida
         assert results[0]["review_id"] == "rev_1"
 
     def test_bm25_search_empty_query_returns_empty(self, sample_reviews_df):
         retriever = BM25RetrieverOlist(sample_reviews_df)
         results = retriever.search("", top_k=2)
+        assert results == []
+
+    def test_bm25_search_no_match_returns_empty(self, sample_reviews_df):
+        """Valida que termos inexistentes não retornam documentos de pontuação zero."""
+        retriever = BM25RetrieverOlist(sample_reviews_df)
+        results = retriever.search("palavrainexistentenocorpusxyz", top_k=2)
         assert results == []
 
 
@@ -51,7 +56,7 @@ class TestHybridSearchEngineMocked:
         ]
         mock_bm25_cls.return_value = mock_bm25_instance
 
-        # Mock do Vector Store (sem ChromaDB e sem modelo de embedding)
+        # Mock do Vector Store (sem ChromaDB e sem carregar modelo pesado)
         mock_vector_instance = MagicMock()
         mock_vector_instance.similarity_search.return_value = [
             {"review_id": "rev_2", "clean_comment": "produto com defeito", "score": 0.88},
@@ -64,8 +69,7 @@ class TestHybridSearchEngineMocked:
 
         assert len(results) <= 2
         returned_ids = [doc["review_id"] for doc in results]
-        # Ambos os documentos devem estar presentes na união RRF
         assert "rev_1" in returned_ids
         assert "rev_2" in returned_ids
-        # Garantir que o cálculo de score RRF foi anexado
-        assert "rrf_score" in results[0] or "score" in results[0]
+        # Exigência rigorosa de presença do score consolidado de RRF
+        assert "rrf_score" in results[0]

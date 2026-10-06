@@ -1,4 +1,4 @@
-from typing import List, Dict, Any
+from typing import Any, Dict, List
 import pandas as pd
 from rank_bm25 import BM25Okapi
 from src.core.logging import logger
@@ -22,30 +22,40 @@ class BM25RetrieverOlist:
             self._tokenize(doc) for doc in self.df["clean_comment"]
         ]
         self.bm25 = BM25Okapi(tokenized_corpus)
-        logger.info(f"Índice BM25 construído com {len(tokenized_corpus):,} documentos.")
+        logger.info(
+            f"Índice BM25 construído com {len(tokenized_corpus):,} documentos."
+        )
 
     def search(self, query: str, top_k: int = 15) -> List[Dict[str, Any]]:
-        """Recupera os documentos mais relevantes com base em pontuação BM25."""
+        """Recupera os documentos mais relevantes com base em pontuação BM25 estritamente positiva."""
         tokenized_query = self._tokenize(query)
         if not tokenized_query:
             return []
 
         scores = self.bm25.get_scores(tokenized_query)
+
+        # Seleciona apenas índices com pontuação estritamente positiva para evitar ruído léxico
+        positive_indices = [i for i, s in enumerate(scores) if s > 0.0]
+        if not positive_indices:
+            return []
+
         top_indices = sorted(
-            range(len(scores)), key=lambda i: scores[i], reverse=True
+            positive_indices, key=lambda i: scores[i], reverse=True
         )[:top_k]
 
         results = []
         for idx in top_indices:
             row = self.df.iloc[idx]
-            results.append({
-                "review_id": str(row.get("review_id", "")),
-                "order_id": str(row.get("order_id", "")),
-                "review_score": int(row.get("review_score", 0)),
-                "text": str(row.get("full_comment", "")),
-                "delivery_delay_days": row.get("delivery_delay_days"),
-                "is_delayed": row.get("is_delayed"),
-                "score_bm25": float(scores[idx]),
-                "retriever_type": "bm25"
-            })
+            results.append(
+                {
+                    "review_id": str(row.get("review_id", "")),
+                    "order_id": str(row.get("order_id", "")),
+                    "review_score": int(row.get("review_score", 0)),
+                    "text": str(row.get("full_comment", "")),
+                    "delivery_delay_days": row.get("delivery_delay_days"),
+                    "is_delayed": row.get("is_delayed"),
+                    "score_bm25": float(scores[idx]),
+                    "retriever_type": "bm25",
+                }
+            )
         return results

@@ -12,7 +12,6 @@ from src.core.config import settings
 from src.core.logging import logger
 from src.indexing.bm25_retriever import BM25RetrieverOlist
 from src.indexing.vector_store import OlistVectorStore
-from src.rag.reranker import CrossEncoderReranker
 
 
 class HybridSearchEngine:
@@ -29,11 +28,11 @@ class HybridSearchEngine:
         rrf_k: int = 60,
     ) -> List[Dict[str, Any]]:
         """Executa recuperação híbrida e combina rankings via RRF."""
+        fetch_k = max(top_k, settings.BM25_TOP_K)
+
         # 1. Recuperação em paralelo/conjunta
-        bm25_results = self.bm25_retriever.search(query, top_k=settings.BM25_TOP_K)
-        vector_results = self.vector_store.similarity_search(
-            query, top_k=settings.VECTOR_TOP_K
-        )
+        bm25_results = self.bm25_retriever.search(query, top_k=fetch_k)
+        vector_results = self.vector_store.similarity_search(query, top_k=fetch_k)
 
         # 2. Fusão RRF: Score = 1 / (k + rank)
         rrf_scores: Dict[str, float] = {}
@@ -65,6 +64,3 @@ class HybridSearchEngine:
             f"Recuperação híbrida concluída. Retornados {len(final_docs)} documentos consolidados."
         )
         return final_docs
-
-
-

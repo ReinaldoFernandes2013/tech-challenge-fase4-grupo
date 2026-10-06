@@ -1,3 +1,4 @@
+import unicodedata
 import pytest
 from src.data.preprocessor import TextCleanerPTBR
 
@@ -44,6 +45,13 @@ class TestTextCleanerPTBR:
         assert "péssimo!" in result
         assert "não recomendo." in result
         assert "quebrado?" in result
+
+    def test_clean_unicode_nfd_normalization(self):
+        # Garante que texto em formato NFD (decomposto) seja normalizado sem perder acentuação
+        text_nfd = unicodedata.normalize("NFD", "póssivel não é ótimo")
+        result = TextCleanerPTBR.clean(text_nfd)
+        assert "não" in result
+        assert "ótimo" in result
 
     def test_clean_collapse_extra_spaces(self):
         text = "  muito    bom   recomendo   "

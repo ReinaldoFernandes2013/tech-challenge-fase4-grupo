@@ -3,7 +3,7 @@ import pandas as pd
 import pytest
 
 from src.rag.pipeline import OlistRAGPipeline
-from src.schemas.rag_schema import InsightResponse
+from src.schemas.rag_schema import InsightResponse, LLMOutputSchema
 
 
 @pytest.fixture
@@ -26,30 +26,26 @@ class TestOlistRAGPipelineMocked:
     def test_pipeline_out_of_scope_insufficient_evidence(
         self, mock_hybrid_cls, mock_reranker_cls, mock_df
     ):
-        """Valida formalmente se perguntas fora do escopo acionam a abstenção segura (Fallback 1)
-        quando o score das evidências for menor que o limiar empírico de 0.10.
+        """Valida formalmente se perguntas fora do escopo acionam a abstenção segura
+        quando o score das evidências for menor que o limiar calibrado.
         """
-        # 1. Instância do pipeline
         pipeline = OlistRAGPipeline(mock_df)
 
-        # 2. Mock do reranker devolvendo score irrelevante / baixo (< 0.10)
         pipeline.reranker.rerank.return_value = [
             {
                 "review_id": "rev_irrelevante",
                 "text": "comentário não relacionado",
-                "rerank_score": 0.04,  # abaixo do threshold de 0.10
+                "rerank_score": 0.04,  # abaixo do threshold
                 "review_score": 1,
                 "delivery_delay_days": 0.0,
             }
         ]
 
-        # Evita busca em cache durante o teste
         pipeline.cache.get = MagicMock(return_value=None)
 
         query = "Qual é a receita de bolo de cenoura com cobertura de chocolate?"
         response = pipeline.generate_insight(query=query)
 
-        # Comprovações formais da abstenção segura
         assert isinstance(response, InsightResponse)
         assert response.query == query
         assert "Não encontramos evidências suficientes" in response.executive_summary
@@ -62,14 +58,14 @@ class TestOlistRAGPipelineMocked:
     def test_pipeline_valid_evidence_generation(
         self, mock_hybrid_cls, mock_reranker_cls, mock_df
     ):
-        """Valida o fluxo com evidências acima do limiar sem invocar API real de LLM."""
+        """Valida o fluxo com evidências acima do limiar utilizando mock de LLM estruturado."""
         pipeline = OlistRAGPipeline(mock_df)
 
         pipeline.reranker.rerank.return_value = [
             {
                 "review_id": "rev_100",
                 "text": "O prazo de entrega atrasou mais de 2 semanas.",
-                "rerank_score": 0.85,  # acima do threshold
+                "rerank_score": 0.85,
                 "review_score": 1,
                 "delivery_delay_days": 14.0,
             }
@@ -77,14 +73,26 @@ class TestOlistRAGPipelineMocked:
 
         pipeline.cache.get = MagicMock(return_value=None)
 
+        mock_llm = MagicMock()
+        mock_chain = MagicMock()
+        mock_chain.invoke.return_value = LLMOutputSchema(
+            executive_summary="O atraso nas entregas ocorre predominantemente na fase de transporte.",
+            sentiment_trend="Crítico/Negativo",
+            key_root_causes=["Atraso logístico de 2 semanas"],
+            actionable_recommendations=["Rever SLAs com transportadoras"],
+            cited_review_ids=["rev_100"],
+        )
+        mock_llm.with_structured_output.return_value = mock_chain
+
         query = "Quais são os principais motivos de atraso na entrega?"
-        response = pipeline.generate_insight(query=query, llm=None)
+        response = pipeline.generate_insight(query=query, llm=mock_llm)
 
         assert isinstance(response, InsightResponse)
         assert response.query == query
-        assert len(response.citations) > 0
+        assert len(response.citations) == 1
         assert response.citations[0].review_id == "rev_100"
         assert response.citations[0].review_score == 1
+        assert response.groundedness_score == 1.0
 
     @patch("src.rag.pipeline.CrossEncoderReranker")
     @patch("src.rag.pipeline.HybridSearchEngine")
@@ -94,7 +102,6 @@ class TestOlistRAGPipelineMocked:
         """Valida se o fallback determinístico sob falha da API de LLM reflete adequadamente comentários positivos."""
         pipeline = OlistRAGPipeline(mock_df)
 
-        # Simula recuperação de avaliações 5 estrelas
         pipeline.reranker.rerank.return_value = [
             {
                 "review_id": "rev_elogio_1",
@@ -107,7 +114,6 @@ class TestOlistRAGPipelineMocked:
 
         pipeline.cache.get = MagicMock(return_value=None)
 
-        # Simula explicitamente a falha de conexão / API do LLM
         mock_failing_llm = MagicMock()
         mock_failing_llm.with_structured_output.side_effect = RuntimeError("API Gemini Indisponível / Quota Excedida")
 
