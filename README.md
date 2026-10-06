@@ -198,7 +198,7 @@ tech-challenge-fase4-grupo/
 1. **Clonar o repositório e aceder à pasta:**
 
 ```Shell
-git clone <URL_DO_REPOSITORIO>
+git clone <https://github.com/ReinaldoFernandes2013/tech-challenge-fase4-grupo>
 cd tech-challenge-fase4-grupo
 ```
 
