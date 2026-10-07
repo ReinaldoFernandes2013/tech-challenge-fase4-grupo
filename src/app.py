@@ -1,3 +1,5 @@
+import subprocess
+import sys
 import time
 import pandas as pd
 import plotly.express as px
@@ -13,8 +15,28 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-API_URL = "http://localhost:8000/api/v1/query"
-HEALTH_URL = "http://localhost:8000/health"
+API_URL = "http://127.0.0.1:8000/api/v1/query"
+HEALTH_URL = "http://127.0.0.1:8000/health"
+
+
+def ensure_backend_alive():
+    """Inicializa o Uvicorn em background caso a API esteja offline (essencial no Streamlit Cloud)."""
+    try:
+        r = requests.get(HEALTH_URL, timeout=1.0)
+        if r.status_code == 200:
+            return
+    except Exception:
+        pass
+
+    # Arranca o FastAPI via Uvicorn como subprocesso
+    subprocess.Popen(
+        [sys.executable, "-m", "uvicorn", "src.api.main:app", "--host", "127.0.0.1", "--port", "8000"]
+    )
+    time.sleep(3)
+
+
+# Garante arranque do backend no boot da aplicação
+ensure_backend_alive()
 
 # Custom CSS para Design Executivo Premium (Dark Mode)
 st.markdown(
@@ -48,7 +70,7 @@ st.markdown(
 )
 
 
-def check_api_health(retries: int = 3, delay: float = 0.8) -> bool:
+def check_api_health(retries: int = 5, delay: float = 1.0) -> bool:
     """Verifica a integridade da API FastAPI tolerando tempo de boot do lifespan."""
     for _ in range(retries):
         try:
@@ -74,7 +96,7 @@ with col_desc:
 
 # Sidebar de Parâmetros Avançados e Status de Infra
 with st.sidebar:
-    st.header("⚙️️ Painel de Governança MLOps")
+    st.header("⚙ Painel de Governança MLOps")
     st.markdown("**Hiperparâmetros do Pipeline:**")
     retrieval_k = st.slider(
         "Candidatos Híbridos (k)", min_value=10, max_value=40, value=15, step=5
@@ -96,7 +118,7 @@ with st.sidebar:
         st.info("🟢 Vector DB: ChromaDB (Local)")
         st.info("🟢 LLM Provider: Google Gemini API")
     else:
-        st.error("🔴 API Offline - Execute o backend Uvicorn")
+        st.error("🔴 API Offline - A aguardar arranque do backend")
 
 # Input de Negócio / Dores da Operação
 st.markdown("---")
