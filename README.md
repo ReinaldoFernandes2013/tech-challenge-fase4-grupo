@@ -9,6 +9,8 @@
 [![Tests](<https://img.shields.io/badge/Tests-Pytest%20(37%2F37%20Passed)-brightgreen.svg>)]()
 [![RAG Triad](<https://img.shields.io/badge/Audit-RAG%20Triad%20Passed-success.svg>)]()
 
+[![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://fiap-voc-intelligence.streamlit.app)
+
 ---
 
 ## 1. Visão Geral e Contexto de Negócio
@@ -188,7 +190,6 @@ tech-challenge-fase4-grupo/
 └── requirements.txt                # Dependências do projeto
 ```
 
-
 ---
 
 ## 7. Instruções de Execução
@@ -251,8 +252,6 @@ python scripts/verify_mapping.py
 uvicorn src.api.main:app --reload --port 8000
 ```
 
-
-
 ### Documentação Interativa da API (Swagger / OpenAPI)
 
 A plataforma disponibiliza uma API RESTful de alta performance construída sobre FastAPI, contendo documentação interativa OpenAPI/Swagger para validação de endpoints e auditoria de respostas do pipeline RAG.
@@ -276,8 +275,6 @@ streamlit run src/app.py
 
 Interface gráfica: [http://localhost:8501](http://localhost:8501)
 
-
-
 ### Opção B: Execução via Docker Compose
 
 Para arrancar toda a infraestrutura com um único comando:
@@ -289,8 +286,6 @@ docker compose up --build
 **API FastAPI:** `http://localhost:8000`
 
 **Streamlit Dashboard:** `http://localhost:8501`
-
-
 
 ---
 
@@ -305,8 +300,6 @@ pytest -v
 ```
 
 Evidência Real de Execução no Terminal:
-
-
 
 tests/test_api.py::test_health_check_endpoint PASSED                      [  2%]
 tests/test_api.py::test_query_endpoint_validation_error PASSED            [  5%]
@@ -339,8 +332,6 @@ tests/test_schemas.py::test_llm_output_schema PASSED                     [100%]
 
 ======================== 37 passed in 33.80s ========================
 
-
-
 | **Módulo de Teste**     | **Itens Avaliados** | **Cobertura / Foco**                                                                |
 | ------------------------------ | ------------------------- | ----------------------------------------------------------------------------------------- |
 | `tests/test_api.py`          | 3                         | Validação de contratos FastAPI, rotas de health check e execução mockada              |
@@ -350,15 +341,11 @@ tests/test_schemas.py::test_llm_output_schema PASSED                     [100%]
 | `tests/test_router.py`       | 14                        | Cache semântico, extração de filtros de UF/nota e deteção de intenção quantitativa |
 | `tests/test_schemas.py`      | 5                         | Validação do schema`InsightResponse`e restrições de integridade Pydantic V2         |
 
-
-
 2. Execução do Benchmark da Tríade de RAG
 
 ```Shell
 python -m src.evaluation.benchmark
 ```
-
-
 
 ---
 
@@ -375,3 +362,15 @@ python -m src.evaluation.benchmark
 - **Fine-Tuning de Embeddings de Domínio:** Ajuste fino supervisionado de modelos de representação densa utilizando o próprio vocabulário de SAC e logística do comércio eletrónico brasileiro.
 - **Roteamento Dinâmico Multi-LLM:** Implementação de failover automático para modelos alternativos (ex.: fallback transparente para modelo local open-source ou provedor secundário) antes de acionar a síntese determinística.
 - **Pipeline de Feedback Loop Contínuo:** Interface de curadoria humana ativa para validação de respostas e enriquecimento contínuo da base vetorial.
+
+
+
+## 🌐 Demonstração Online (Streamlit Cloud)
+
+A interface interativa para exploração executiva e auditoria do pipeline RAG está publicada e disponível para testes em nuvem:
+
+👉 **Acesse a aplicação online:** [https://fiap-voc-intelligence.streamlit.app](https://fiap-voc-intelligence.streamlit.app)
+
+[![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://fiap-voc-intelligence.streamlit.app)
+
+> **Nota:** A plataforma integra busca híbrida (BM25 + vetorial), re-ranking neural e validação de groundedness em tempo real.
