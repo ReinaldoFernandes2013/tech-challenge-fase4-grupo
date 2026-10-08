@@ -11,6 +11,8 @@
 
 [![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://fiap-voc-intelligence.streamlit.app)
 
+* 📑 **Diapositivos da Apresentação:** [Aceder à Apresentação em PDF](docs/Tech_Challenge_Fase4_Apresentacao.pdf)
+
 ---
 
 ## 1. Visão Geral e Contexto de Negócio
@@ -362,8 +364,6 @@ python -m src.evaluation.benchmark
 - **Fine-Tuning de Embeddings de Domínio:** Ajuste fino supervisionado de modelos de representação densa utilizando o próprio vocabulário de SAC e logística do comércio eletrónico brasileiro.
 - **Roteamento Dinâmico Multi-LLM:** Implementação de failover automático para modelos alternativos (ex.: fallback transparente para modelo local open-source ou provedor secundário) antes de acionar a síntese determinística.
 - **Pipeline de Feedback Loop Contínuo:** Interface de curadoria humana ativa para validação de respostas e enriquecimento contínuo da base vetorial.
-
-
 
 ## 🌐 Demonstração Online (Streamlit Cloud)
 
