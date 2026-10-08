@@ -1,3 +1,4 @@
+import os
 import subprocess
 import sys
 import time
@@ -17,26 +18,42 @@ st.set_page_config(
 
 API_URL = "http://127.0.0.1:8000/api/v1/query"
 HEALTH_URL = "http://127.0.0.1:8000/health"
+LOCK_FILE = "/tmp/uvicorn_backend.lock"
 
 
-def ensure_backend_alive():
-    """Inicializa o Uvicorn em background caso a API esteja offline (essencial no Streamlit Cloud)."""
+@st.cache_resource
+def start_backend_service():
+    """Garante que o backend Uvicorn arranca uma única vez, prevenindo concorrência e OOM."""
     try:
-        r = requests.get(HEALTH_URL, timeout=1.0)
+        r = requests.get(HEALTH_URL, timeout=1.5)
         if r.status_code == 200:
-            return
+            return True
     except Exception:
         pass
 
-    # Arranca o FastAPI via Uvicorn como subprocesso
-    subprocess.Popen(
-        [sys.executable, "-m", "uvicorn", "src.api.main:app", "--host", "127.0.0.1", "--port", "8000"]
-    )
-    time.sleep(3)
+    # Evita duplicação caso outro reload esteja a decorrer
+    if not os.path.exists(LOCK_FILE):
+        with open(LOCK_FILE, "w") as f:
+            f.write(str(os.getpid()))
+
+        subprocess.Popen(
+            [
+                sys.executable,
+                "-m",
+                "uvicorn",
+                "src.api.main:app",
+                "--host",
+                "127.0.0.1",
+                "--port",
+                "8000",
+            ],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+    return True
 
 
-# Garante arranque do backend no boot da aplicação
-ensure_backend_alive()
+start_backend_service()
 
 # Custom CSS para Design Executivo Premium (Dark Mode)
 st.markdown(
@@ -70,8 +87,8 @@ st.markdown(
 )
 
 
-def check_api_health(retries: int = 5, delay: float = 1.0) -> bool:
-    """Verifica a integridade da API FastAPI tolerando tempo de boot do lifespan."""
+def check_api_health(retries: int = 15, delay: float = 2.0) -> bool:
+    """Verifica a integridade tolerando o carregamento dos 41k registos e modelos."""
     for _ in range(retries):
         try:
             resp = requests.get(HEALTH_URL, timeout=2.0)
@@ -112,13 +129,15 @@ with st.sidebar:
     st.divider()
     st.markdown("**Status dos Nós de Serviço:**")
 
-    is_api_healthy = check_api_health()
+    with st.spinner("A conectar aos serviços de backend..."):
+        is_api_healthy = check_api_health(retries=3, delay=1.0)
+
     if is_api_healthy:
         st.success("🟢 API FastAPI: Online (Port 8000)")
         st.info("🟢 Vector DB: ChromaDB (Local)")
         st.info("🟢 LLM Provider: Google Gemini API")
     else:
-        st.error("🔴 API Offline - A aguardar arranque do backend")
+        st.warning("🟡 Backend a inicializar modelos (aguarde alguns segundos)")
 
 # Input de Negócio / Dores da Operação
 st.markdown("---")
