@@ -12,6 +12,8 @@
 [![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://fiap-voc-intelligence.streamlit.app)
 
 * 📑 **Diapositivos da Apresentação:** [Aceder à Apresentação em PDF](docs/Tech_Challenge_Fase4_Apresentacao.pdf)
+* 🎥 **Vídeo Demonstrativo:** [Assistir no YouTube](https://youtu.be/dBbINnohcb8)
+* 📑 **Documentação Técnica e Científica:** [Acessar Relatório em PDF](docs/Tech_Challenge_Fase4_Documentacao_Tecnica.pdf)
 
 ---
 
